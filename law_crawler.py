@@ -20,7 +20,7 @@ try:
 except ImportError:
     create_urllib3_context = None
 
-from config import HEADERS, TIMEOUT, DEFAULT_DAYS, OUTPUT_FILE, SITES
+from config import HEADERS, TIMEOUT, DEFAULT_DAYS, OUTPUT_FILE, SITES, WECHAT_ACCOUNTS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -406,6 +406,330 @@ class LawCrawler:
 
         logger.info(f"最高人民法院: 获取 {len(items)} 条")
 
+    # ==================== 最高人民检察院 ====================
+    def crawl_spp_gov(self):
+        """爬取最高人民检察院"""
+        logger.info("开始爬取: 最高人民检察院")
+        site = SITES["spp_gov"]
+        urls_to_try = [
+            f"{site['base_url']}/spp/tt/",  # 头条
+            f"{site['base_url']}/spp/gzbg/",  # 工作报告
+        ]
+
+        items = []
+        for page_url in urls_to_try:
+            html = self._fetch(page_url)
+            if not html:
+                continue
+
+            soup = BeautifulSoup(html, "html.parser")
+            # 查找所有链接
+            links = soup.find_all("a", href=True)
+            for link in links:
+                title = link.get_text(strip=True)
+                href = link.get("href", "")
+                if not title or len(title) < 4:
+                    continue
+                
+                # 只处理包含具体内容的链接
+                if not href or href.startswith("#") or href.startswith("javascript:"):
+                    continue
+                
+                # 从URL或父元素提取日期
+                date_text = ""
+                parent = link.parent
+                if parent:
+                    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", parent.get_text())
+                    if date_match:
+                        date_text = date_match.group(1)
+                
+                # 从URL提取日期
+                if not date_text:
+                    url_date_match = re.search(r"/(\d{4})(\d{2})/", href)
+                    if url_date_match:
+                        date_text = f"{url_date_match.group(1)}-{url_date_match.group(2)}-01"
+
+                if date_text and self._is_in_range(date_text):
+                    full_url = urljoin(site["base_url"], href) if href.startswith("/") else href
+                    items.append({
+                        "title": title,
+                        "date": date_text,
+                        "url": full_url,
+                        "source": site["source_label"],
+                    })
+
+        seen = set()
+        for item in items:
+            key = item["title"]
+            if key not in seen:
+                seen.add(key)
+                self.results.append(item)
+
+        logger.info(f"最高人民检察院: 获取 {len(items)} 条")
+
+    # ==================== 中国裁判文书网 ====================
+    def crawl_wenshu_court(self):
+        """爬取中国裁判文书网"""
+        logger.info("开始爬取: 中国裁判文书网")
+        site = SITES["wenshu_court"]
+        
+        # 裁判文书网使用API接口
+        api_url = f"{site['base_url']}/website/parse/rest.q4c9e2a7f6b8d5f3a1e0c9b8d7f6e5a4"
+        
+        items = []
+        try:
+            # 尝试获取最新文书列表
+            page_url = f"{site['base_url']}/website/parse/rest.q4c9e2a7f6b8d5f3a1e0c9b8d7f6e5a4"
+            html = self._fetch(page_url)
+            if html:
+                soup = BeautifulSoup(html, "html.parser")
+                links = soup.find_all("a", href=True)
+                for link in links:
+                    title = link.get_text(strip=True)
+                    href = link.get("href", "")
+                    if not title or len(title) < 4:
+                        continue
+
+                    parent = link.parent
+                    date_text = ""
+                    if parent:
+                        date_match = re.search(r"(\d{4}-\d{2}-\d{2})", parent.get_text())
+                        if date_match:
+                            date_text = date_match.group(1)
+
+                    if date_text and self._is_in_range(date_text):
+                        full_url = urljoin(site["base_url"], href) if href.startswith("/") else href
+                        items.append({
+                            "title": title,
+                            "date": date_text,
+                            "url": full_url,
+                            "source": site["source_label"],
+                        })
+        except Exception as e:
+            logger.warning(f"中国裁判文书网爬取失败: {e}")
+
+        seen = set()
+        for item in items:
+            key = item["title"]
+            if key not in seen:
+                seen.add(key)
+                self.results.append(item)
+
+        logger.info(f"中国裁判文书网: 获取 {len(items)} 条")
+
+    # ==================== 最高人民法院司法案例研究院 ====================
+    def crawl_court_research(self):
+        """爬取最高人民法院司法案例研究院"""
+        logger.info("开始爬取: 最高人民法院司法案例研究院")
+        site = SITES["court_research"]
+        
+        # 案例研究院在court.gov.cn下
+        page_url = f"{site['base_url']}/zixun/gengduo/24.html"  # 典型案例
+        
+        items = []
+        html = self._fetch(page_url)
+        if html:
+            soup = BeautifulSoup(html, "html.parser")
+            links = soup.find_all("a", href=True)
+            for link in links:
+                title = link.get_text(strip=True)
+                href = link.get("href", "")
+                if not title or len(title) < 4:
+                    continue
+                if "xiangqing" not in href:
+                    continue
+
+                parent = link.parent
+                date_text = ""
+                if parent:
+                    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", parent.get_text())
+                    if date_match:
+                        date_text = date_match.group(1)
+
+                if date_text and self._is_in_range(date_text):
+                    full_url = urljoin(site["base_url"], href) if href.startswith("/") else href
+                    items.append({
+                        "title": title,
+                        "date": date_text,
+                        "url": full_url,
+                        "source": site["source_label"],
+                    })
+
+        seen = set()
+        for item in items:
+            key = item["title"]
+            if key not in seen:
+                seen.add(key)
+                self.results.append(item)
+
+        logger.info(f"最高人民法院司法案例研究院: 获取 {len(items)} 条")
+
+    # ==================== 天平阳光 ====================
+    def crawl_tianping(self):
+        """爬取天平阳光"""
+        logger.info("开始爬取: 天平阳光")
+        site = SITES["tianping"]
+        
+        # 天平阳光是最高法的综合资讯平台
+        page_url = site["base_url"]
+        
+        items = []
+        html = self._fetch(page_url)
+        if html:
+            soup = BeautifulSoup(html, "html.parser")
+            links = soup.find_all("a", href=True)
+            for link in links:
+                title = link.get_text(strip=True)
+                href = link.get("href", "")
+                if not title or len(title) < 4:
+                    continue
+                
+                # 只处理包含具体内容的链接
+                if not href or href.startswith("#") or href.startswith("javascript:"):
+                    continue
+                
+                # 从URL或父元素提取日期
+                date_text = ""
+                parent = link.parent
+                if parent:
+                    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", parent.get_text())
+                    if date_match:
+                        date_text = date_match.group(1)
+                
+                # 从URL提取日期
+                if not date_text:
+                    url_date_match = re.search(r"/(\d{4})(\d{2})/", href)
+                    if url_date_match:
+                        date_text = f"{url_date_match.group(1)}-{url_date_match.group(2)}-01"
+
+                if date_text and self._is_in_range(date_text):
+                    full_url = urljoin(site["base_url"], href) if href.startswith("/") else href
+                    items.append({
+                        "title": title,
+                        "date": date_text,
+                        "url": full_url,
+                        "source": site["source_label"],
+                    })
+
+        seen = set()
+        for item in items:
+            key = item["title"]
+            if key not in seen:
+                seen.add(key)
+                self.results.append(item)
+
+        logger.info(f"天平阳光: 获取 {len(items)} 条")
+
+    # ==================== 中国普法 ====================
+    def crawl_china_pufa(self):
+        """爬取中国普法"""
+        logger.info("开始爬取: 中国普法")
+        site = SITES["china_pufa"]
+        
+        # 中国普法在司法部网站下
+        page_url = f"{site['base_url']}/pub/sfbgw/gwxw/ttxw/"
+        
+        items = []
+        html = self._fetch(page_url)
+        if html:
+            soup = BeautifulSoup(html, "html.parser")
+            links = soup.find_all("a", href=True)
+            for link in links:
+                title = link.get_text(strip=True)
+                href = link.get("href", "")
+                if not title or len(title) < 4:
+                    continue
+
+                parent = link.parent
+                date_text = ""
+                if parent:
+                    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", parent.get_text())
+                    if date_match:
+                        date_text = date_match.group(1)
+
+                # 从URL提取日期
+                if not date_text:
+                    url_date_match = re.search(r"(\d{4})(\d{2})/t\d+_(\d+)", href)
+                    if url_date_match:
+                        date_text = f"{url_date_match.group(1)}-{url_date_match.group(2)}-{url_date_match.group(3)[:2]}"
+
+                if date_text and self._is_in_range(date_text):
+                    full_url = urljoin(site["base_url"], href) if href.startswith("/") else href
+                    items.append({
+                        "title": title,
+                        "date": date_text,
+                        "url": full_url,
+                        "source": site["source_label"],
+                    })
+
+        seen = set()
+        for item in items:
+            key = item["title"]
+            if key not in seen:
+                seen.add(key)
+                self.results.append(item)
+
+        logger.info(f"中国普法: 获取 {len(items)} 条")
+
+    # ==================== 微信公众号 ====================
+    def crawl_wechat_accounts(self):
+        """爬取微信公众号文章"""
+        logger.info("开始爬取: 微信公众号")
+        items = []
+        
+        for account_name, urls in WECHAT_ACCOUNTS.items():
+            logger.info(f"爬取公众号: {account_name}")
+            for url in urls:
+                try:
+                    html = self._fetch(url)
+                    if not html:
+                        continue
+                    
+                    soup = BeautifulSoup(html, "html.parser")
+                    
+                    # 提取标题
+                    title_elem = soup.find('h1', class_='rich_media_title')
+                    if not title_elem:
+                        continue
+                    title = title_elem.get_text(strip=True)
+                    
+                    # 提取发布时间（从JS变量中）
+                    date_text = ""
+                    time_match = re.search(r'var\s+ct\s*=\s*"(\d+)"', html)
+                    if time_match:
+                        ts = int(time_match.group(1))
+                        dt = datetime.fromtimestamp(ts)
+                        date_text = dt.strftime("%Y-%m-%d")
+                    
+                    # 如果JS变量中没有，尝试从页面中查找日期
+                    if not date_text:
+                        date_patterns = re.findall(r'(\d{4}-\d{2}-\d{2})', html)
+                        if date_patterns:
+                            date_text = date_patterns[0]
+                    
+                    if date_text and self._is_in_range(date_text):
+                        items.append({
+                            "title": title,
+                            "date": date_text,
+                            "url": url,
+                            "source": account_name,
+                        })
+                        logger.info(f"  ✓ {title[:40]}... ({date_text})")
+                    
+                    time.sleep(0.5)  # 避免请求过快
+                except Exception as e:
+                    logger.warning(f"  ✗ 爬取失败: {e}")
+        
+        # 去重
+        seen = set()
+        for item in items:
+            key = item["title"]
+            if key not in seen:
+                seen.add(key)
+                self.results.append(item)
+        
+        logger.info(f"微信公众号: 获取 {len(items)} 条")
+
     # ==================== 获取摘要 ====================
     def _get_summary(self, url):
         """从详情页获取摘要信息"""
@@ -429,6 +753,7 @@ class LawCrawler:
         logger.info(f"开始爬取，时间范围: 最近 {self.days} 天（从 {self.cutoff_date.strftime('%Y-%m-%d')} 至今）")
         start_time = time.time()
 
+        # 原有网站
         self.crawl_flk_npc()
         time.sleep(1)
         self.crawl_gov_cn()
@@ -438,6 +763,22 @@ class LawCrawler:
         self.crawl_moj_gov()
         time.sleep(1)
         self.crawl_court_gov()
+        time.sleep(1)
+        
+        # 新增公众号和网站
+        self.crawl_spp_gov()
+        time.sleep(1)
+        self.crawl_wenshu_court()
+        time.sleep(1)
+        self.crawl_court_research()
+        time.sleep(1)
+        self.crawl_tianping()
+        time.sleep(1)
+        self.crawl_china_pufa()
+        time.sleep(1)
+
+        # 微信公众号
+        self.crawl_wechat_accounts()
 
         # 按日期降序排序
         self.results.sort(key=lambda x: x.get("date", ""), reverse=True)
