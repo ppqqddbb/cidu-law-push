@@ -188,61 +188,39 @@ class LawCrawler:
 
     # ==================== 中国政府网·政策文件库 ====================
     def crawl_gov_cn(self):
-        """爬取中国政府网·政策文件库"""
+        """爬取中国政府网·政策文件库 - 使用 JSON API"""
         logger.info("开始爬取: 中国政府网·政策文件库")
         site = SITES["gov_cn"]
-        urls_to_try = [
-            "https://www.gov.cn/zhengce/zuixin/",  # 最新政策
-        ]
         items = []
 
-        for url in urls_to_try:
-            logger.info(f"尝试URL: {url}")
-            html = self._fetch(url, encoding="utf-8")
-            if not html:
-                logger.warning(f"无法获取页面: {url}")
-                continue
+        # 使用 JSON API 获取数据
+        json_url = "https://www.gov.cn/zhengce/zuixin/ZUIXINZHENGCE.json"
+        try:
+            resp = self.session.get(json_url, timeout=TIMEOUT)
+            resp.encoding = "utf-8"
+            resp.raise_for_status()
+            data = resp.json()
+            
+            if isinstance(data, list):
+                for item_data in data:
+                    title = item_data.get("TITLE", "")
+                    url = item_data.get("URL", "")
+                    pub_date = item_data.get("DOCRELPUBTIME", "")
+                    
+                    if title and url and pub_date and self._is_in_range(pub_date):
+                        items.append({
+                            "title": title,
+                            "date": pub_date,
+                            "url": url,
+                            "source": site["source_label"],
+                        })
+                logger.info(f"中国政府网: 从 JSON API 获取 {len(items)} 条")
+            else:
+                logger.warning(f"中国政府网 JSON API 返回数据格式异常: {type(data)}")
+        except Exception as e:
+            logger.warning(f"中国政府网 JSON API 请求失败: {e}")
 
-            soup = BeautifulSoup(html, "html.parser")
-            logger.info(f"页面长度: {len(html)} 字符")
-
-            for a_tag in soup.find_all("a", href=True):
-                href = a_tag.get("href", "")
-                title = a_tag.get_text(strip=True)
-                if not title or len(title) < 4:
-                    continue
-                # 匹配政策内容页链接
-                if "content" not in href and "zhengce" not in href:
-                    continue
-
-                logger.debug(f"找到链接: {title} -> {href}")
-
-                # 从URL中提取日期
-                date_text = ""
-                url_date_match = re.search(r"/(\d{4})(\d{2})/content_", href)
-                if url_date_match:
-                    year = url_date_match.group(1)
-                    month = url_date_match.group(2)
-                    date_text = f"{year}-{month}-01"
-
-                # 如果URL中没有，从父元素或相邻元素中提取日期
-                if not date_text:
-                    parent = a_tag.parent
-                    if parent:
-                        parent_text = parent.get_text()
-                        date_match = re.search(r"(\d{4}-\d{2}-\d{2})", parent_text)
-                        if date_match:
-                            date_text = date_match.group(1)
-
-                if date_text and self._is_in_range(date_text):
-                    full_url = urljoin("https://www.gov.cn/", href) if href.startswith("/") else href
-                    items.append({
-                        "title": title,
-                        "date": date_text,
-                        "url": full_url,
-                        "source": site["source_label"],
-                    })
-
+        # 去重
         seen = set()
         for item in items:
             key = item["title"]
@@ -304,12 +282,14 @@ class LawCrawler:
 
     # ==================== 司法部 ====================
     def crawl_moj_gov(self):
-        """爬取司法部 - 只爬取政策法规内容"""
+        """爬取司法部 - 处理 JavaScript 重定向"""
         logger.info("开始爬取: 司法部")
         site = SITES["moj_gov"]
+        
+        # 司法部页面使用 JS 重定向，需要直接访问重定向后的 URL
         urls_to_try = [
-            f"{site['base_url']}/pub/sfbgw/zwgk/",  # 政务公开
-            f"{site['base_url']}/pub/sfbgw/gwxw/",  # 新闻中心
+            f"{site['base_url']}/pub/sfbgw/zwgk/zwgkxxgk/",  # 政务公开-信息公开
+            f"{site['base_url']}/pub/sfbgw/gwxw/ttxw/",  # 新闻中心-头条新闻
         ]
 
         items = []
