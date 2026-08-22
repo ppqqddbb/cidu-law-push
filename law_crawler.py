@@ -700,93 +700,107 @@ class LawCrawler:
         logger.info(f"微信公众号: 获取 {len(items)} 条")
     
     def _search_sogou_weixin(self, keyword, source_label):
-        """通过搜狗微信搜索获取文章"""
+        """通过搜狗微信搜索获取文章，支持分页"""
         items = []
+        max_pages = 50  # 搜狗微信搜索最多支持50页
         
-        # 构建搜索URL
-        base_url = SOGOU_WEIXIN["base_url"]
-        search_type = SOGOU_WEIXIN["type"]
-        search_url = f"{base_url}?type={search_type}&query={keyword}"
+        # 设置请求头
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'Referer': 'https://weixin.sogou.com/',
+        }
         
-        try:
-            # 设置请求头
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'zh-CN,zh;q=0.9',
-                'Referer': 'https://weixin.sogou.com/',
-            }
+        # 搜狗微信搜索不是按时间排序，需要遍历所有页面
+        for page in range(1, max_pages + 1):
+            # 构建搜索URL，添加分页参数
+            base_url = SOGOU_WEIXIN["base_url"]
+            search_type = SOGOU_WEIXIN["type"]
+            search_url = f"{base_url}?type={search_type}&query={keyword}&page={page}"
             
-            resp = self.session.get(search_url, headers=headers, timeout=TIMEOUT)
-            resp.encoding = 'utf-8'
-            
-            if resp.status_code != 200:
-                logger.warning(f"搜狗微信搜索失败: {keyword}, 状态码: {resp.status_code}")
-                return items
-            
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            
-            # 查找文章列表 - 使用正确的选择器
-            txt_boxes = soup.select('div.txt-box')
-            logger.info(f"  找到 {len(txt_boxes)} 个文章容器")
-            
-            for box in txt_boxes:
-                try:
-                    # 提取标题和链接
-                    title_link = box.find('a')
-                    if not title_link:
-                        continue
-                    
-                    title = title_link.get_text(strip=True)
-                    article_url = title_link.get('href', '')
-                    
-                    if not title or not article_url:
-                        continue
-                    
-                    # 提取时间戳 - 从 timeConvert('timestamp') 中提取
-                    date_text = ""
-                    time_script = box.find('script', string=re.compile(r'timeConvert'))
-                    if time_script:
-                        # 从 script 标签中提取时间戳
-                        match = re.search(r"timeConvert\('(\d+)'\)", time_script.string)
-                        if match:
-                            timestamp = int(match.group(1))
-                            dt = datetime.fromtimestamp(timestamp)
-                            date_text = dt.strftime("%Y-%m-%d")
-                    
-                    # 如果没有找到时间戳，尝试从 span.s2 中提取
-                    if not date_text:
-                        time_elem = box.find('span', class_='s2')
-                        if time_elem:
-                            time_text = time_elem.get_text(strip=True)
-                            if time_text:
-                                date_text = self._parse_relative_time(time_text)
-                    
-                    # 检查是否在时间范围内
-                    if date_text and self._is_in_range(date_text):
-                        # 搜狗返回的是相对链接，需要拼接完整URL
-                        if article_url.startswith('/'):
-                            article_url = f"https://weixin.sogou.com{article_url}"
-                        
-                        # 获取真实微信链接
-                        real_url = self._get_real_wechat_url(article_url)
-                        if real_url:
-                            items.append({
-                                "title": title,
-                                "date": date_text,
-                                "url": real_url,
-                                "source": source_label,
-                            })
-                            logger.info(f"  ✓ {title[:40]}... ({date_text})")
-                    else:
-                        logger.debug(f"  跳过文章（日期不符合）: {title[:30]}, 日期: {date_text}")
+            try:
+                resp = self.session.get(search_url, headers=headers, timeout=TIMEOUT)
+                resp.encoding = 'utf-8'
                 
-                except Exception as e:
-                    logger.warning(f"  解析文章失败: {e}")
-                    continue
-        
-        except Exception as e:
-            logger.warning(f"搜狗微信搜索请求失败: {keyword}, 错误: {e}")
+                if resp.status_code != 200:
+                    logger.warning(f"搜狗微信搜索失败: {keyword}, 页码: {page}, 状态码: {resp.status_code}")
+                    break
+                
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                
+                # 查找文章列表
+                txt_boxes = soup.select('div.txt-box')
+                
+                if not txt_boxes:
+                    logger.info(f"  第 {page} 页无文章，停止分页")
+                    break
+                
+                logger.info(f"  第 {page} 页找到 {len(txt_boxes)} 个文章容器")
+                
+                page_valid_count = 0
+                
+                for box in txt_boxes:
+                    try:
+                        # 提取标题和链接
+                        title_link = box.find('a')
+                        if not title_link:
+                            continue
+                        
+                        title = title_link.get_text(strip=True)
+                        article_url = title_link.get('href', '')
+                        
+                        if not title or not article_url:
+                            continue
+                        
+                        # 提取时间戳 - 从 timeConvert('timestamp') 中提取
+                        date_text = ""
+                        time_script = box.find('script', string=re.compile(r'timeConvert'))
+                        if time_script:
+                            match = re.search(r"timeConvert\('(\d+)'\)", time_script.string)
+                            if match:
+                                timestamp = int(match.group(1))
+                                dt = datetime.fromtimestamp(timestamp)
+                                date_text = dt.strftime("%Y-%m-%d")
+                        
+                        # 如果没有找到时间戳，尝试从 span.s2 中提取
+                        if not date_text:
+                            time_elem = box.find('span', class_='s2')
+                            if time_elem:
+                                time_text = time_elem.get_text(strip=True)
+                                if time_text:
+                                    date_text = self._parse_relative_time(time_text)
+                        
+                        # 检查是否在时间范围内
+                        if date_text and self._is_in_range(date_text):
+                            page_valid_count += 1
+                            # 搜狗返回的是相对链接，需要拼接完整URL
+                            if article_url.startswith('/'):
+                                article_url = f"https://weixin.sogou.com{article_url}"
+                            
+                            # 获取真实微信链接
+                            real_url = self._get_real_wechat_url(article_url)
+                            if real_url:
+                                items.append({
+                                    "title": title,
+                                    "date": date_text,
+                                    "url": real_url,
+                                    "source": source_label,
+                                })
+                                logger.info(f"  ✓ {title[:40]}... ({date_text})")
+                        
+                    except Exception as e:
+                        logger.warning(f"  解析文章失败: {e}")
+                        continue
+                
+                logger.info(f"  第 {page} 页符合时间范围: {page_valid_count} 篇")
+                
+                # 添加延迟，避免请求过快
+                time.sleep(1)
+                
+            except Exception as e:
+                logger.warning(f"搜狗微信搜索请求失败: {keyword}, 页码: {page}, 错误: {e}")
+                break
         
         return items
     
