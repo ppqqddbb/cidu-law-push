@@ -20,7 +20,7 @@ try:
 except ImportError:
     create_urllib3_context = None
 
-from config import HEADERS, TIMEOUT, DEFAULT_DAYS, OUTPUT_FILE, SITES, WECHAT_ACCOUNTS
+from config import HEADERS, TIMEOUT, DEFAULT_DAYS, OUTPUT_FILE, SITES, WECHAT_ACCOUNTS, SOGOU_WEIXIN
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -671,54 +671,23 @@ class LawCrawler:
 
         logger.info(f"中国普法: 获取 {len(items)} 条")
 
-    # ==================== 微信公众号 ====================
+    # ==================== 微信公众号（通过搜狗微信搜索） ====================
     def crawl_wechat_accounts(self):
-        """爬取微信公众号文章"""
-        logger.info("开始爬取: 微信公众号")
+        """通过搜狗微信搜索爬取公众号文章"""
+        logger.info("开始爬取: 微信公众号（搜狗微信搜索）")
         items = []
         
-        for account_name, urls in WECHAT_ACCOUNTS.items():
-            logger.info(f"爬取公众号: {account_name}")
-            for url in urls:
-                try:
-                    html = self._fetch(url)
-                    if not html:
-                        continue
-                    
-                    soup = BeautifulSoup(html, "html.parser")
-                    
-                    # 提取标题
-                    title_elem = soup.find('h1', class_='rich_media_title')
-                    if not title_elem:
-                        continue
-                    title = title_elem.get_text(strip=True)
-                    
-                    # 提取发布时间（从JS变量中）
-                    date_text = ""
-                    time_match = re.search(r'var\s+ct\s*=\s*"(\d+)"', html)
-                    if time_match:
-                        ts = int(time_match.group(1))
-                        dt = datetime.fromtimestamp(ts)
-                        date_text = dt.strftime("%Y-%m-%d")
-                    
-                    # 如果JS变量中没有，尝试从页面中查找日期
-                    if not date_text:
-                        date_patterns = re.findall(r'(\d{4}-\d{2}-\d{2})', html)
-                        if date_patterns:
-                            date_text = date_patterns[0]
-                    
-                    if date_text and self._is_in_range(date_text):
-                        items.append({
-                            "title": title,
-                            "date": date_text,
-                            "url": url,
-                            "source": account_name,
-                        })
-                        logger.info(f"  ✓ {title[:40]}... ({date_text})")
-                    
-                    time.sleep(0.5)  # 避免请求过快
-                except Exception as e:
-                    logger.warning(f"  ✗ 爬取失败: {e}")
+        for account_name, config in WECHAT_ACCOUNTS.items():
+            keywords = config.get("keywords", [account_name])
+            source_label = config.get("source_label", account_name)
+            
+            logger.info(f"搜索公众号: {account_name} (关键词: {keywords})")
+            
+            for keyword in keywords:
+                # 通过搜狗微信搜索获取文章
+                search_items = self._search_sogou_weixin(keyword, source_label)
+                items.extend(search_items)
+                time.sleep(1)  # 避免请求过快
         
         # 去重
         seen = set()
@@ -729,6 +698,127 @@ class LawCrawler:
                 self.results.append(item)
         
         logger.info(f"微信公众号: 获取 {len(items)} 条")
+    
+    def _search_sogou_weixin(self, keyword, source_label):
+        """通过搜狗微信搜索获取文章"""
+        items = []
+        
+        # 构建搜索URL
+        base_url = SOGOU_WEIXIN["base_url"]
+        search_type = SOGOU_WEIXIN["type"]
+        search_url = f"{base_url}?type={search_type}&query={keyword}"
+        
+        try:
+            # 设置请求头
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9',
+                'Referer': 'https://weixin.sogou.com/',
+            }
+            
+            resp = self.session.get(search_url, headers=headers, timeout=TIMEOUT)
+            resp.encoding = 'utf-8'
+            
+            if resp.status_code != 200:
+                logger.warning(f"搜狗微信搜索失败: {keyword}, 状态码: {resp.status_code}")
+                return items
+            
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            # 查找文章列表 - 使用正确的选择器
+            txt_boxes = soup.select('div.txt-box')
+            logger.info(f"  找到 {len(txt_boxes)} 个文章容器")
+            
+            for box in txt_boxes:
+                try:
+                    # 提取标题和链接
+                    title_link = box.find('a')
+                    if not title_link:
+                        continue
+                    
+                    title = title_link.get_text(strip=True)
+                    article_url = title_link.get('href', '')
+                    
+                    if not title or not article_url:
+                        continue
+                    
+                    # 提取时间戳 - 从 timeConvert('timestamp') 中提取
+                    date_text = ""
+                    time_script = box.find('script', string=re.compile(r'timeConvert'))
+                    if time_script:
+                        # 从 script 标签中提取时间戳
+                        match = re.search(r"timeConvert\('(\d+)'\)", time_script.string)
+                        if match:
+                            timestamp = int(match.group(1))
+                            dt = datetime.fromtimestamp(timestamp)
+                            date_text = dt.strftime("%Y-%m-%d")
+                    
+                    # 如果没有找到时间戳，尝试从 span.s2 中提取
+                    if not date_text:
+                        time_elem = box.find('span', class_='s2')
+                        if time_elem:
+                            time_text = time_elem.get_text(strip=True)
+                            if time_text:
+                                date_text = self._parse_relative_time(time_text)
+                    
+                    # 检查是否在时间范围内
+                    if date_text and self._is_in_range(date_text):
+                        # 搜狗返回的是相对链接，需要拼接完整URL
+                        if article_url.startswith('/'):
+                            article_url = f"https://weixin.sogou.com{article_url}"
+                        
+                        # 获取真实微信链接
+                        real_url = self._get_real_wechat_url(article_url)
+                        if real_url:
+                            items.append({
+                                "title": title,
+                                "date": date_text,
+                                "url": real_url,
+                                "source": source_label,
+                            })
+                            logger.info(f"  ✓ {title[:40]}... ({date_text})")
+                    else:
+                        logger.debug(f"  跳过文章（日期不符合）: {title[:30]}, 日期: {date_text}")
+                
+                except Exception as e:
+                    logger.warning(f"  解析文章失败: {e}")
+                    continue
+        
+        except Exception as e:
+            logger.warning(f"搜狗微信搜索请求失败: {keyword}, 错误: {e}")
+        
+        return items
+    
+    def _parse_relative_time(self, time_text):
+        """解析相对时间"""
+        now = datetime.now()
+        
+        if '分钟前' in time_text:
+            return now.strftime("%Y-%m-%d")
+        elif '小时前' in time_text:
+            return now.strftime("%Y-%m-%d")
+        elif '昨天' in time_text:
+            return (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        elif '前天' in time_text:
+            return (now - timedelta(days=2)).strftime("%Y-%m-%d")
+        elif '天前' in time_text:
+            match = re.search(r'(\d+)天前', time_text)
+            if match:
+                days = int(match.group(1))
+                return (now - timedelta(days=days)).strftime("%Y-%m-%d")
+        
+        return ""
+    
+    def _get_real_wechat_url(self, sogou_url):
+        """获取搜狗跳转后的真实微信文章链接"""
+        try:
+            # 搜狗的链接是跳转链接，需要跟随重定向
+            resp = self.session.head(sogou_url, allow_redirects=True, timeout=10)
+            return resp.url
+        except:
+            # 如果获取失败，返回原始链接
+            return sogou_url
 
     # ==================== 获取摘要 ====================
     def _get_summary(self, url):

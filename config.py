@@ -21,7 +21,13 @@ DEFAULT_DAYS = 7
 
 # 输出文件路径
 OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "law_output.txt")
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, "result.txt")
+LAW_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "law.txt")
+CASE_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "case.txt")
+
+# Dify 大模型配置
+DIFY_API_URL = "http://ciduai.daneng.cc/v1"
+DIFY_API_KEY = "app-9vafjQOyvM8j25Y4u43P8lLx"
 
 # 各网站配置
 SITES = {
@@ -77,111 +83,48 @@ SITES = {
     },
 }
 
-# 微信公众号链接配置
+# 搜狗微信搜索配置
+SOGOU_WEIXIN = {
+    "base_url": "https://weixin.sogou.com/weixin",
+    "type": 2,  # 2=搜文章, 1=搜公众号
+    "source_label": "微信公众号",
+}
+
+# 微信公众号搜索关键词配置
 WECHAT_ACCOUNTS = {
-    "山东高法": [
-        "https://mp.weixin.qq.com/s/4Hd843YWk18JpAV6_q_aeg",
-    ],
-    "上海法院": [
-        "https://mp.weixin.qq.com/s/wwxdgzJyFRjbU5Y_R2Zzyg",
-    ],
-    "京法网事": [
-        "https://mp.weixin.qq.com/s/QR574A_UKx7hFrgD3CkQDw",
-    ],
-    "江苏高院": [
-        "https://mp.weixin.qq.com/s/6-hV5_zksOtotwv35gAhZA",
-    ],
-    "浙江法院": [
-        "https://mp.weixin.qq.com/s/w0AhA-hElkTNGIL0dK9pFQ",
-    ],
-    "广东法院": [
-        "https://mp.weixin.qq.com/s/uwzcINNZbJ2oMWDarPCD1A",
-    ],
-    "豫法阳光": [
-        "http://mp.weixin.qq.com/s?__biz=MzA5NzAwNDU0MQ==&mid=2658541737&idx=1&sn=4bfbb2db85c766b21cbef88a4944fc60",
-    ],
-    "湖南高法": [
-        "https://mp.weixin.qq.com/s/mzTGLtLh9IOT-HxQ3oKhVg",
-    ],
-    "鄂法在线": [
-        "https://mp.weixin.qq.com/s/tZ7WHChbEngkEZ5uO1dCGg",
-    ],
-    "四川高院": [
-        "https://mp.weixin.qq.com/s/0IguG7iPpT7XYql9zCgmdQ",
-    ],
-    "福建高院": [
-        "https://mp.weixin.qq.com/s/PhuwmfSLkR4980Ehdx7ZdQ",
-    ],
-    "安徽高院": [
-        "https://mp.weixin.qq.com/s/PGrTDLHnQv0M1oL0tjXvyw",
-    ],
-    "陕西高院": [
-        "https://mp.weixin.qq.com/s/mnLWfncqzT0lgcor51wWWw",
-    ],
-    "重庆高院": [
-        "https://mp.weixin.qq.com/s/xV7X27sQUyBhOEWa3WySoQ",
-    ],
-    "天津高院": [
-        "https://mp.weixin.qq.com/s/-9A-eWxIrbjX2FRC6O3JdA",
-    ],
-    "河北高院": [
-        "https://mp.weixin.qq.com/s/xY9Xj8Woyzyihc9yvXdj1A",
-    ],
-    "上海一中院": [
-        "http://mp.weixin.qq.com/s?__biz=MjM5MjkwMDkxMA==&mid=2649585987&idx=1&sn=fbcc6d640343e7288ad56bf07ab8e026",
-    ],
-    "上海二中院": [
-        "http://mp.weixin.qq.com/s?__biz=MzA4MzY3NjMxNw==&mid=2656555839&idx=1&sn=8bcb8679fb1a64c3436d55a66e425a56",
-    ],
-    "苏州中院": [
-        "https://mp.weixin.qq.com/s/gwfYrmWAtI8up4Kt0cElgw",
-    ],
-    "深圳中院": [
-        "http://mp.weixin.qq.com/s?__biz=MzA3ODA0OTEyMg==&mid=2653977723&idx=1&sn=eab47c61d32438d108d700bf43514a40",
-    ],
-    "广州中院": [
-        "https://mp.weixin.qq.com/s/hzZC7oVfem06_hWJUezFDQ",
-    ],
-    "北京一中院": [
-        "http://mp.weixin.qq.com/s?__biz=MzI5NTkxMDU2NQ==&mid=2247630946&idx=1&sn=17705c374ff0c0d7dea15fef1300edd0",
-    ],
-    "杭州中院": [
-        "https://mp.weixin.qq.com/s/x-GfvPV9nv9beq_Qa0EBtg",
-    ],
-    "南京中院": [
-        "https://mp.weixin.qq.com/s/x-GfvPV9nv9beq_Qa0EBtg",
-    ],
-    "成都中院": [
-        "https://mp.weixin.qq.com/s/B_wheJnOoq-2KuclHI9saA",
-    ],
-    "重庆五中院": [
-        "http://mp.weixin.qq.com/s?__biz=Mzg5MzE4MjQxMw==&mid=2247629234&idx=1&sn=3391fe9b39101d49e16336aec5aaa81f",
-    ],
-    "武汉中院": [
-        "https://mp.weixin.qq.com/s/emhYsa5_2MHpEVSjxbr46g",
-    ],
-    "西安中院": [
-        "https://mp.weixin.qq.com/s/cjiJ1ZzsGC-Us9GsMxdErQ",
-    ],
-    "青岛中院": [
-        "http://mp.weixin.qq.com/s?__biz=MzA3MTc1Njg5Ng==&mid=2651734386&idx=1&sn=f45f6983b2e6580b54b152c4c6962cf1",
-    ],
-    "宁波中院": [
-        "https://mp.weixin.qq.com/s/9UTK2a25A8bAw9Q_Jsr6RA",
-    ],
-    "最高人民法院": [
-        "https://mp.weixin.qq.com/s/XCWC_sn05if-ef68_Ddsdg",
-    ],
-    "最高人民法院司法案例研究院": [
-        "http://mp.weixin.qq.com/s?__biz=MzIxNTYzNzU4NA==&mid=2247586491&idx=2&sn=6c598d081a12668802e2b907b4b013ac",
-    ],
-    "天平阳光": [
-        "https://mp.weixin.qq.com/s/ESZoJf8KPNS3Y2i3Cv6J1w",
-    ],
-    "中国普法": [
-        "https://mp.weixin.qq.com/s/0FSevLaRb4bqTjtaU1IwsQ",
-    ],
-    "最高人民检察院": [
-        "https://mp.weixin.qq.com/s/piEVgV88YVydglF5C_XKUQ",
-    ],
+    "山东高法": {"keywords": ["山东高法"], "source_label": "山东高法"},
+    "上海法院": {"keywords": ["上海法院", "上海高院"], "source_label": "上海法院"},
+    "京法网事": {"keywords": ["京法网事", "北京高院"], "source_label": "京法网事"},
+    "江苏高院": {"keywords": ["江苏高院"], "source_label": "江苏高院"},
+    "浙江法院": {"keywords": ["浙江法院"], "source_label": "浙江法院"},
+    "广东法院": {"keywords": ["广东法院"], "source_label": "广东法院"},
+    "豫法阳光": {"keywords": ["豫法阳光", "河南高院"], "source_label": "豫法阳光"},
+    "湖南高法": {"keywords": ["湖南高法"], "source_label": "湖南高法"},
+    "鄂法在线": {"keywords": ["鄂法在线", "湖北高院"], "source_label": "鄂法在线"},
+    "四川高院": {"keywords": ["四川高院"], "source_label": "四川高院"},
+    "福建高院": {"keywords": ["福建高院"], "source_label": "福建高院"},
+    "安徽高院": {"keywords": ["安徽高院"], "source_label": "安徽高院"},
+    "陕西高院": {"keywords": ["陕西高院"], "source_label": "陕西高院"},
+    "重庆高院": {"keywords": ["重庆高院"], "source_label": "重庆高院"},
+    "天津高院": {"keywords": ["天津高院"], "source_label": "天津高院"},
+    "河北高院": {"keywords": ["河北高院"], "source_label": "河北高院"},
+    "上海一中院": {"keywords": ["上海一中院", "上海一中法院"], "source_label": "上海一中院"},
+    "上海二中院": {"keywords": ["上海二中院", "上海二中法院"], "source_label": "上海二中院"},
+    "苏州中院": {"keywords": ["苏州中院", "苏州中级法院"], "source_label": "苏州中院"},
+    "深圳中院": {"keywords": ["深圳中院", "深圳中级人民法院"], "source_label": "深圳中院"},
+    "广州中院": {"keywords": ["广州中院", "广州中级人民法院"], "source_label": "广州中院"},
+    "北京一中院": {"keywords": ["北京一中院", "北京一中法院"], "source_label": "北京一中院"},
+    "杭州中院": {"keywords": ["杭州中院", "杭州中级法院"], "source_label": "杭州中院"},
+    "南京中院": {"keywords": ["南京中院", "南京中级法院"], "source_label": "南京中院"},
+    "成都中院": {"keywords": ["成都中院", "成都中级法院"], "source_label": "成都中院"},
+    "重庆五中院": {"keywords": ["重庆五中院"], "source_label": "重庆五中院"},
+    "武汉中院": {"keywords": ["武汉中院", "武汉中级法院"], "source_label": "武汉中院"},
+    "西安中院": {"keywords": ["西安中院", "西安中级法院"], "source_label": "西安中院"},
+    "青岛中院": {"keywords": ["青岛中院", "青岛中级法院"], "source_label": "青岛中院"},
+    "宁波中院": {"keywords": ["宁波中院", "宁波中级法院"], "source_label": "宁波中院"},
+    "最高人民法院": {"keywords": ["最高人民法院"], "source_label": "最高人民法院"},
+    "最高人民法院司法案例研究院": {"keywords": ["最高人民法院司法案例研究院"], "source_label": "最高人民法院司法案例研究院"},
+    "天平阳光": {"keywords": ["天平阳光"], "source_label": "天平阳光"},
+    "中国普法": {"keywords": ["中国普法"], "source_label": "中国普法"},
+    "最高人民检察院": {"keywords": ["最高人民检察院"], "source_label": "最高人民检察院"},
 }
