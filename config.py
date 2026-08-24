@@ -90,41 +90,73 @@ SOGOU_WEIXIN = {
     "source_label": "微信公众号",
 }
 
+# 山东高法官网指导案例列表
+SDCOURT_CASE_LIST_URL = "https://www.sdcourt.gov.cn/nwglpt/7278484/index.html"
+
+# Official court websites used by the case crawler.  Seed URLs are deliberately
+# kept public and configurable because court CMS paths can change independently.
+COURT_SITES = {
+    "sdcourt": {
+        "name": "山东高法",
+        "source_label": "山东高法官网",
+        "base_url": "https://www.sdcourt.gov.cn/",
+        "seed_urls": [SDCOURT_CASE_LIST_URL, "https://www.sdcourt.gov.cn/"],
+        "keywords": ["案例", "指导", "典型", "裁判", "判决", "审判", "执行"],
+        "case_terms": ["案例", "指导", "典型", "裁判", "判决", "减刑", "执行案件"],
+    },
+    "shanghai_first": {
+        "name": "上海一中法院",
+        "source_label": "上海一中法院官网",
+        "base_url": "https://www.a-court.gov.cn/",
+        "seed_urls": ["https://www.a-court.gov.cn/"],
+        "keywords": ["案例", "典型", "裁判", "判决", "审判", "执行"],
+        "case_terms": ["案例", "指导", "典型", "裁判", "判决", "减刑", "执行案件"],
+    },
+    "shanghai_second": {
+        "name": "上海二中法院",
+        "source_label": "上海二中法院官网",
+        "base_url": "https://www.shezfy.gov.cn/",
+        "seed_urls": ["https://www.shezfy.gov.cn/"],
+        "keywords": ["案例", "典型", "裁判", "判决", "审判", "执行"],
+        "case_terms": ["案例", "指导", "典型", "裁判", "判决", "减刑", "执行案件"],
+    },
+    "suzhou": {
+        "name": "苏州中级法院",
+        "source_label": "苏州中级法院官网",
+        "base_url": "https://www.szfy.gov.cn/",
+        "seed_urls": [
+            "https://www.szfy.gov.cn/",
+            "http://www.szfy.gov.cn/",
+            "https://www.suzhoucourt.gov.cn/",
+            "http://www.suzhoucourt.gov.cn/",
+            "https://www.szzy.gov.cn/",
+        ],
+        "domains": ["www.szzy.gov.cn", "www.suzhoucourt.gov.cn"],
+        "keywords": ["案例", "典型", "裁判", "判决", "审判", "执行"],
+        "case_terms": ["案例", "指导", "典型", "裁判", "判决", "减刑", "执行案件"],
+    },
+    "shenzhen": {
+        "name": "深圳中级人民法院",
+        "source_label": "深圳中级人民法院官网",
+        "base_url": "https://www.szcourt.gov.cn/",
+        "seed_urls": ["https://www.szcourt.gov.cn/"],
+        "keywords": ["案例", "典型", "裁判", "判决", "审判", "执行"],
+        "case_terms": ["案例", "指导", "典型", "裁判", "判决", "减刑", "执行案件"],
+    },
+}
+
+# 目标微信公众号列表（用于 Playwright 搜狗搜索爬取）
+WECHAT_ARTICLES = [
+    {"account": "山东高法", "province": "山东", "category": "案例检索"},
+]
+
+# 微信公众号标题输出文件
+WECHAT_TITLE_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "wechat_titles.txt")
+
 # 微信公众号搜索关键词配置
 WECHAT_ACCOUNTS = {
-    "山东高法": {"keywords": ["山东高法"], "source_label": "山东高法"},
-    "上海法院": {"keywords": ["上海法院", "上海高院"], "source_label": "上海法院"},
-    "京法网事": {"keywords": ["京法网事", "北京高院"], "source_label": "京法网事"},
-    "江苏高院": {"keywords": ["江苏高院"], "source_label": "江苏高院"},
-    "浙江法院": {"keywords": ["浙江法院"], "source_label": "浙江法院"},
-    "广东法院": {"keywords": ["广东法院"], "source_label": "广东法院"},
-    "豫法阳光": {"keywords": ["豫法阳光", "河南高院"], "source_label": "豫法阳光"},
-    "湖南高法": {"keywords": ["湖南高法"], "source_label": "湖南高法"},
-    "鄂法在线": {"keywords": ["鄂法在线", "湖北高院"], "source_label": "鄂法在线"},
-    "四川高院": {"keywords": ["四川高院"], "source_label": "四川高院"},
-    "福建高院": {"keywords": ["福建高院"], "source_label": "福建高院"},
-    "安徽高院": {"keywords": ["安徽高院"], "source_label": "安徽高院"},
-    "陕西高院": {"keywords": ["陕西高院"], "source_label": "陕西高院"},
-    "重庆高院": {"keywords": ["重庆高院"], "source_label": "重庆高院"},
-    "天津高院": {"keywords": ["天津高院"], "source_label": "天津高院"},
-    "河北高院": {"keywords": ["河北高院"], "source_label": "河北高院"},
-    "上海一中院": {"keywords": ["上海一中院", "上海一中法院"], "source_label": "上海一中院"},
-    "上海二中院": {"keywords": ["上海二中院", "上海二中法院"], "source_label": "上海二中院"},
-    "苏州中院": {"keywords": ["苏州中院", "苏州中级法院"], "source_label": "苏州中院"},
-    "深圳中院": {"keywords": ["深圳中院", "深圳中级人民法院"], "source_label": "深圳中院"},
-    "广州中院": {"keywords": ["广州中院", "广州中级人民法院"], "source_label": "广州中院"},
-    "北京一中院": {"keywords": ["北京一中院", "北京一中法院"], "source_label": "北京一中院"},
-    "杭州中院": {"keywords": ["杭州中院", "杭州中级法院"], "source_label": "杭州中院"},
-    "南京中院": {"keywords": ["南京中院", "南京中级法院"], "source_label": "南京中院"},
-    "成都中院": {"keywords": ["成都中院", "成都中级法院"], "source_label": "成都中院"},
-    "重庆五中院": {"keywords": ["重庆五中院"], "source_label": "重庆五中院"},
-    "武汉中院": {"keywords": ["武汉中院", "武汉中级法院"], "source_label": "武汉中院"},
-    "西安中院": {"keywords": ["西安中院", "西安中级法院"], "source_label": "西安中院"},
-    "青岛中院": {"keywords": ["青岛中院", "青岛中级法院"], "source_label": "青岛中院"},
-    "宁波中院": {"keywords": ["宁波中院", "宁波中级法院"], "source_label": "宁波中院"},
-    "最高人民法院": {"keywords": ["最高人民法院"], "source_label": "最高人民法院"},
-    "最高人民法院司法案例研究院": {"keywords": ["最高人民法院司法案例研究院"], "source_label": "最高人民法院司法案例研究院"},
-    "天平阳光": {"keywords": ["天平阳光"], "source_label": "天平阳光"},
-    "中国普法": {"keywords": ["中国普法"], "source_label": "中国普法"},
-    "最高人民检察院": {"keywords": ["最高人民检察院"], "source_label": "最高人民检察院"},
+    "山东高法": {
+        "keywords": ["山东高法", "山东省高级人民法院", "山东高院"],
+        "source_label": "山东高法",
+    },
 }

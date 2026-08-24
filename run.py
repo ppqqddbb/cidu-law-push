@@ -18,25 +18,50 @@ def main():
     # 解析命令行参数
     days = 7  # 默认爬取最近7天
     use_filter = "--no-filter" not in sys.argv
+    # --sdcourt-only is retained as a compatibility alias; both switches now
+    # crawl the five configured official court sites.
+    courts_only = "--courts-only" in sys.argv or "--sdcourt-only" in sys.argv
+    start_value = None
+    end_value = None
+    for flag, target in (("--start", "start"), ("--end", "end")):
+        if flag in sys.argv:
+            index = sys.argv.index(flag)
+            if index + 1 >= len(sys.argv):
+                print(f"错误: {flag} 后需要 YYYY-MM-DD 日期")
+                sys.exit(1)
+            if target == "start":
+                start_value = sys.argv[index + 1]
+            else:
+                end_value = sys.argv[index + 1]
     
-    if len(sys.argv) > 1:
+    positional_days = [value for value in sys.argv[1:] if not value.startswith("--")]
+    # Remove values belonging to --start/--end from positional parsing.
+    positional_days = [value for value in positional_days
+                       if value not in {start_value, end_value}]
+    if positional_days:
         try:
-            days = int(sys.argv[1])
+            days = int(positional_days[0])
         except ValueError:
             print("错误: 天数必须是整数")
             print("用法: python run.py [天数] [--no-filter]")
             print("示例: python run.py 7")
             sys.exit(1)
     
-    print(f"开始爬取最近 {days} 天的法律信息...")
-    print(f"时间范围: {(datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')} 至 {datetime.now().strftime('%Y-%m-%d')}")
+    # 创建爬虫实例
+    crawler = LawCrawler(days=days, start_date=start_value, end_date=end_value)
+    if start_value or end_value:
+        print("开始爬取指定日期范围的法律信息...")
+    else:
+        print(f"开始爬取最近 {days} 天的法律信息...")
+    print(f"时间范围: {crawler.start_date.strftime('%Y-%m-%d')} 至 {crawler.end_date.strftime('%Y-%m-%d')}")
     print("=" * 60)
     
-    # 创建爬虫实例
-    crawler = LawCrawler(days=days)
-    
-    # 爬取所有网站
-    crawler.crawl_all()
+    # 官网专项模式只抓取山东高法指导案例；普通模式保留其他法律网站。
+    if courts_only:
+        crawler.crawl_courts()
+        crawler.results.sort(key=lambda x: x.get("date", ""), reverse=True)
+    else:
+        crawler.crawl_all()
     
     # 保存结果（默认不抓取摘要，加 --summary 可开启）
     fetch_summary = "--summary" in sys.argv

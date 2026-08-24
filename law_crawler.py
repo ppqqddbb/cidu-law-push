@@ -10,7 +10,7 @@ import time
 import ssl
 import logging
 from datetime import datetime, timedelta
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -20,7 +20,10 @@ try:
 except ImportError:
     create_urllib3_context = None
 
-from config import HEADERS, TIMEOUT, DEFAULT_DAYS, OUTPUT_FILE, SITES, WECHAT_ACCOUNTS, SOGOU_WEIXIN
+from config import (
+    HEADERS, TIMEOUT, DEFAULT_DAYS, OUTPUT_FILE, SITES,
+    WECHAT_ACCOUNTS, SOGOU_WEIXIN, SDCOURT_CASE_LIST_URL, COURT_SITES,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -54,13 +57,23 @@ class SSLAdapter(HTTPAdapter):
 
 
 class LawCrawler:
-    def __init__(self, days=None):
+    def __init__(self, days=None, start_date=None, end_date=None):
         self.days = days or DEFAULT_DAYS
-        self.cutoff_date = datetime.now() - timedelta(days=self.days)
+        # Treat the first day as inclusive.  Comparing against midnight avoids
+        # dropping articles published earlier on the cutoff calendar day.
+        self.cutoff_date = datetime.combine(
+            (datetime.now() - timedelta(days=self.days)).date(), datetime.min.time()
+        )
+        self.start_date = self._parse_date(start_date) if start_date else self.cutoff_date
+        parsed_end = self._parse_date(end_date) if end_date else None
+        self.end_date = (parsed_end + timedelta(days=1) - timedelta(microseconds=1)
+                         if parsed_end else datetime.now())
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
         # 为npc.gov.cn添加SSL适配器
         self.session.mount("https://www.npc.gov.cn", SSLAdapter())
+        # 山东高法部分节点会主动关闭默认 TLS 握手，使用兼容适配器。
+        self.session.mount("https://www.sdcourt.gov.cn", SSLAdapter())
         self.results = []
 
     def _fetch(self, url, encoding=None):
@@ -94,7 +107,324 @@ class LawCrawler:
         dt = self._parse_date(date_str)
         if dt is None:
             return False
-        return dt >= self.cutoff_date
+        return self.start_date <= dt <= self.end_date
+
+    # ==================== 山东高法官网全站内容 ====================
+    def crawl_sdcourt_broad_legacy(self):
+        """旧版山东高法全站浏览器遍历实现，保留供排障参考。"""
+        logger.info("开始爬取: 山东高法官网全站内容")
+        root_url = "https://www.sdcourt.gov.cn/"
+        queue = [(root_url, 0)]
+        queued = {root_url}
+        visited = set()
+        seen_items = set()
+        items = []
+        browser_page = None
+        browser = None
+        browser_context = None
+        playwright = None
+        max_pages = 300
+        max_depth = 5
+        skip_extensions = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".css", ".js", ".pdf", ".doc", ".docx", ".zip")
+        skip_terms = ("登录", "注册", "无障碍", "联系我们", "网站地图", "rss", "javascript:")
+
+        def normalize(url):
+            parts = urlsplit(url)
+            return urlunsplit((parts.scheme or "https", parts.netloc.lower(), parts.path or "/", "", ""))
+
+        def open_with_browser(url):
+            nonlocal browser_page, browser, browser_context, playwright
+            if browser_page is None:
+                try:
+                    from playwright.sync_api import sync_playwright
+                    playwright = sync_playwright().start()
+                    try:
+                        browser = playwright.chromium.launch(
+                            channel="msedge", headless=False,
+                            args=["--disable-blink-features=AutomationControlled"],
+                        )
+                    except Exception:
+                        browser = playwright.chromium.launch(
+                            headless=False,
+                            args=["--disable-blink-features=AutomationControlled"],
+                        )
+                    browser_context = browser.new_context(
+                        ignore_https_errors=True,
+                        user_agent=HEADERS["User-Agent"],
+                        viewport={"width": 1440, "height": 900},
+                        locale="zh-CN",
+                    )
+                    browser_page = browser_context.new_page()
+                except Exception as exc:
+                    logger.warning("无法启动山东高法浏览器兜底: %s", exc)
+                    return ""
+            try:
+                browser_page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                browser_page.wait_for_timeout(800)
+                return browser_page.content()
+            except Exception as exc:
+                logger.warning("浏览器访问失败: %s -> %s", url, exc)
+                return ""
+
+        try:
+            while queue and len(visited) < max_pages:
+                page_url, depth = queue.pop(0)
+                page_url = normalize(page_url)
+                if page_url in visited or depth > max_depth:
+                    continue
+                visited.add(page_url)
+                html = self._fetch(page_url)
+                soup = BeautifulSoup(html or "", "html.parser") if html else None
+                if soup is None or not soup.find("a", href=True):
+                    html = open_with_browser(page_url)
+                    soup = BeautifulSoup(html or "", "html.parser") if html else None
+                if soup is None:
+                    continue
+
+                for link in soup.find_all("a", href=True):
+                    href = (link.get("href") or "").strip()
+                    title = " ".join(link.get_text(" ", strip=True).split())
+                    if not title:
+                        title = " ".join((link.get("title") or "").split())
+                    if not href:
+                        continue
+                    full_url = normalize(urljoin(page_url, href))
+                    parts = urlsplit(full_url)
+                    if parts.netloc not in ("www.sdcourt.gov.cn", "sdcourt.gov.cn"):
+                        continue
+                    if parts.path.lower().endswith(skip_extensions) or any(term in title for term in skip_terms):
+                        continue
+
+                    if depth < max_depth and full_url not in visited and full_url not in queued:
+                        queued.add(full_url)
+                        queue.append((full_url, depth + 1))
+
+                    if len(title) < 4 or full_url == root_url:
+                        continue
+                    context_parts = []
+                    node = link
+                    for _ in range(6):
+                        if node is None:
+                            break
+                        text = node.get_text(" ", strip=True)
+                        if text:
+                            context_parts.append(text)
+                        node = node.parent
+                    context = " ".join(context_parts)
+                    date_match = re.search(
+                        r"(20\d{2})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?",
+                        context,
+                    )
+                    if not date_match:
+                        continue
+                    date_text = "{}-{:02d}-{:02d}".format(
+                        date_match.group(1), int(date_match.group(2)), int(date_match.group(3))
+                    )
+                    if not self._is_in_range(date_text):
+                        continue
+                    if full_url in seen_items:
+                        continue
+                    seen_items.add(full_url)
+                    items.append({
+                        "title": title,
+                        "date": date_text,
+                        "url": full_url,
+                        "source": "山东高法官网",
+                    })
+                time.sleep(0.2)
+        finally:
+            if browser_context:
+                browser_context.close()
+            if browser:
+                browser.close()
+            if playwright:
+                playwright.stop()
+
+        self.results.extend(items)
+        logger.info("山东高法官网全站内容: 遍历 %d 个页面，获取 %d 条", len(visited), len(items))
+
+    # ==================== 旧栏目解析备用实现 ====================
+    def crawl_sdcourt_legacy(self):
+        """从山东高法官网指导案例栏目抓取案例标题、日期和详情链接。"""
+        logger.info("开始爬取: 山东高法官网指导案例")
+        base_host = "www.sdcourt.gov.cn"
+        queue = [SDCOURT_CASE_LIST_URL]
+        visited_pages = set()
+        seen_items = set()
+        items = []
+        browser_page = None
+        browser = None
+        browser_context = None
+        playwright = None
+
+        try:
+            while queue and len(visited_pages) < 50:
+                page_url = queue.pop(0)
+                if page_url in visited_pages:
+                    continue
+                visited_pages.add(page_url)
+
+                html = self._fetch(page_url)
+                # 有些拦截页返回 200，但没有任何站内链接，也应走浏览器兜底。
+                has_links = False
+                if html:
+                    has_links = bool(BeautifulSoup(html, "html.parser").find("a", href=True))
+                if not html or not has_links:
+                    # 部分节点的 HTTP 入口仍可访问，先尝试不经过 TLS 的地址。
+                    http_url = page_url.replace("https://", "http://", 1)
+                    if http_url != page_url:
+                        html = self._fetch(http_url)
+                        if html:
+                            has_links = bool(
+                                BeautifulSoup(html, "html.parser").find("a", href=True)
+                            )
+                if not html or not has_links:
+                    if browser_page is None:
+                        try:
+                            from playwright.sync_api import sync_playwright
+
+                            playwright = sync_playwright().start()
+                            launch_options = {
+                                # 官网会重置无头浏览器连接；使用可见浏览器模拟手工访问。
+                                "headless": False,
+                                "args": ["--disable-blink-features=AutomationControlled"],
+                            }
+                            try:
+                                browser = playwright.chromium.launch(channel="msedge", **launch_options)
+                            except Exception:
+                                try:
+                                    browser = playwright.chromium.launch(channel="chrome", **launch_options)
+                                except Exception:
+                                    browser = playwright.chromium.launch(**launch_options)
+                            browser_context = browser.new_context(
+                                ignore_https_errors=True,
+                                user_agent=(
+                                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                    "Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
+                                ),
+                                viewport={"width": 1440, "height": 900},
+                                locale="zh-CN",
+                            )
+                            browser_page = browser_context.new_page()
+                        except Exception as exc:
+                            logger.warning("无法启动浏览器访问山东高法官网: %s", exc)
+
+                    if browser_page is not None:
+                        for browser_url in (page_url, page_url.replace("https://", "http://", 1)):
+                            try:
+                                browser_page.goto(
+                                    browser_url,
+                                    wait_until="domcontentloaded",
+                                    timeout=30000,
+                                )
+                                browser_page.wait_for_timeout(1000)
+                                try:
+                                    browser_page.wait_for_load_state("networkidle", timeout=10000)
+                                except Exception:
+                                    # 页面可能持续加载统计/图片资源，已有 DOM 仍可解析。
+                                    pass
+                                candidate_html = browser_page.content()
+                                logger.info(
+                                    "浏览器访问官网: 请求=%s, 最终=%s, 标题=%s, HTML=%d字节",
+                                    browser_url,
+                                    browser_page.url,
+                                    browser_page.title(),
+                                    len(candidate_html),
+                                )
+                                logger.info(
+                                    "官网页面正文前 120 字: %s",
+                                    " ".join(browser_page.locator("body").inner_text().split())[:120],
+                                )
+                                if len(candidate_html) > 500:
+                                    html = candidate_html
+                                    break
+                            except Exception as exc:
+                                logger.warning("浏览器访问失败: %s -> %s", browser_url, exc)
+                if not html:
+                    continue
+                soup = BeautifulSoup(html, "html.parser")
+
+                for link in soup.find_all("a", href=True):
+                    title = " ".join(link.get_text(" ", strip=True).split())
+                    if not title:
+                        title = " ".join((link.get("title", "") or "").split())
+                    href = link.get("href", "").strip()
+                    if not title or len(title) < 4 or not href:
+                        continue
+
+                    full_url = urljoin(page_url, href)
+                    if "sdcourt.gov.cn" not in full_url:
+                        continue
+
+                    # 固定入口可能被重定向到首页，继续寻找迁移后的案例栏目入口。
+                    section_hint = title.lower()
+                    if any(word in section_hint for word in ("指导案例", "指导性案例", "典型案例", "案例检索", "审判公开")):
+                        if full_url not in visited_pages and full_url not in queue:
+                            queue.append(full_url)
+                        # 栏目入口本身不是文章，继续检查分页/文章逻辑即可。
+
+                    link_text = title.lower()
+                    is_pagination = (
+                        any(word in link_text for word in ("下一页", "下页", "next", "尾页"))
+                        or bool(re.search(r"index[_-]?\d+\.html", full_url, re.I))
+                    )
+                    if is_pagination:
+                        if full_url not in visited_pages and full_url not in queue:
+                            queue.append(full_url)
+                        continue
+
+                    # 列表页中的日期通常位于链接父节点或祖先节点文本中。
+                    context_parts = []
+                    node = link
+                    for _ in range(5):
+                        if node is None:
+                            break
+                        text = node.get_text(" ", strip=True)
+                        if text:
+                            context_parts.append(text)
+                        node = node.parent
+                    context = " ".join(context_parts)
+                    date_match = re.search(
+                        r"(20\d{2})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?",
+                        context,
+                    )
+                    date_text = ""
+                    if date_match:
+                        date_text = "{}-{:02d}-{:02d}".format(
+                            date_match.group(1),
+                            int(date_match.group(2)),
+                            int(date_match.group(3)),
+                        )
+
+                    if not date_text or not self._is_in_range(date_text):
+                        continue
+                    if full_url.lower().endswith("index.html"):
+                        continue
+
+                    key = full_url or title
+                    if key in seen_items:
+                        continue
+                    seen_items.add(key)
+                    items.append({
+                        "title": title,
+                        "date": date_text,
+                        "url": full_url,
+                        "source": "山东高法官网",
+                    })
+        finally:
+            if browser_context:
+                browser_context.close()
+            if browser:
+                browser.close()
+            if playwright:
+                playwright.stop()
+
+        self.results.extend(items)
+        logger.info(
+            "山东高法官网指导案例: 遍历 %d 个列表页，获取 %d 条",
+            len(visited_pages), len(items),
+        )
 
 
 
@@ -852,10 +1182,167 @@ class LawCrawler:
         return ""
 
     # ==================== 主爬取流程 ====================
+    @staticmethod
+    def _normalise_court_url(url):
+        parts = urlsplit(url)
+        return urlunsplit((parts.scheme or "https", parts.netloc.lower(), parts.path or "/", parts.query, ""))
+
+    def _extract_court_date(self, text):
+        """Extract the first full calendar date from list-row text or a URL."""
+        if not text:
+            return ""
+        value = " ".join(str(text).replace("\xa0", " ").split())
+        patterns = (
+            r"(20\d{2})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?",
+            r"(20\d{2})(\d{2})(\d{2})",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, value)
+            if not match:
+                continue
+            try:
+                date_value = datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+            except ValueError:
+                continue
+            return date_value.strftime("%Y-%m-%d")
+        return ""
+
+    def _court_link_context(self, link):
+        """Return text from the link and its nearest list/table containers."""
+        chunks = [" ".join(link.get_text(" ", strip=True).split())]
+        node = link
+        fallback = ""
+        for _ in range(6):
+            if node is None:
+                break
+            text = " ".join(node.get_text(" ", strip=True).split())
+            if text and node.name not in {"body", "html"} and len(text) > len(fallback):
+                fallback = text
+            if text and text not in chunks and node.name in {"li", "tr", "article", "dd", "dt"}:
+                chunks.append(text)
+                break
+            node = node.parent
+        if len(chunks) == 1 and fallback and fallback not in chunks:
+            chunks.append(fallback)
+        return " ".join(chunks)
+
+    def _crawl_court_site(self, site_key, site):
+        """Crawl one public court site using requests and ordinary HTML links."""
+        logger.info("开始爬取: %s", site["name"])
+        base_url = self._normalise_court_url(site["base_url"])
+        base_host = urlsplit(base_url).netloc.lower().removeprefix("www.")
+        allowed_hosts = {base_host}
+        allowed_hosts.update(host.lower().removeprefix("www.") for host in site.get("domains", []))
+        seeds = [self._normalise_court_url(url) for url in site.get("seed_urls", [])]
+        queue = [(url, 0) for url in seeds if url]
+        queued = {url for url, _ in queue}
+        visited = set()
+        seen = set()
+        items = []
+        max_pages = int(site.get("max_pages", 120))
+        max_depth = int(site.get("max_depth", 3))
+        keywords = tuple(site.get("keywords", ()))
+        case_terms = tuple(site.get("case_terms", keywords))
+        skip_extensions = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".css", ".js",
+                           ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip", ".mp4")
+        pagination_terms = ("下一页", "下页", "上一页", "尾页", "首页", "next", "page=")
+
+        while queue and len(visited) < max_pages:
+            page_url, depth = queue.pop(0)
+            page_url = self._normalise_court_url(page_url)
+            if page_url in visited or depth > max_depth:
+                continue
+            visited.add(page_url)
+            html = self._fetch(page_url)
+            if not html and page_url.startswith("https://"):
+                # Some judicial CMS nodes expose the same public page over HTTP
+                # while their HTTPS endpoint intermittently resets connections.
+                html = self._fetch(page_url.replace("https://", "http://", 1))
+            if not html:
+                continue
+            soup = BeautifulSoup(html, "html.parser")
+            links = soup.find_all("a", href=True)
+            for link in links:
+                href = (link.get("href") or "").strip()
+                if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                    continue
+                if "[pagevisitpath:" in href.lower() or "pagevisitpath" in href.lower():
+                    continue
+                full_url = self._normalise_court_url(urljoin(page_url, href))
+                parts = urlsplit(full_url)
+                host = parts.netloc.lower().removeprefix("www.")
+                if host not in allowed_hosts or parts.path.lower().endswith(skip_extensions):
+                    continue
+
+                title = " ".join(link.get_text(" ", strip=True).split())
+                if not title:
+                    title = " ".join((link.get("title") or "").split())
+                context = self._court_link_context(link)
+                context_lower = context.lower()
+                is_pagination = any(term in context_lower or term in full_url.lower()
+                                    for term in pagination_terms)
+                is_relevant = any(term in context for term in keywords)
+
+                if (depth < max_depth and full_url not in visited and full_url not in queued
+                        and (is_relevant or is_pagination)):
+                    queued.add(full_url)
+                    queue.append((full_url, depth + 1))
+
+                if len(title) < 4 or full_url == page_url:
+                    continue
+                date_text = self._extract_court_date(context) or self._extract_court_date(full_url)
+                if not date_text or not self._is_in_range(date_text):
+                    continue
+                if title in {"更多", "详细", "详情", "查看", "返回", "关闭"}:
+                    continue
+                # The homepage and section pages often carry today's date in a
+                # shared header.  Keep only links that look like case material,
+                # and explicitly discard common section/navigation labels.
+                section_titles = {
+                    "法院公告", "审判公开", "司法公开", "新闻中心", "更多新闻",
+                    "执行公开", "审务公开", "裁判文书", "网站首页", "首页",
+                }
+                candidate_text = f"{title} {context} {parts.path}"
+                if title in section_titles or not any(term in candidate_text for term in case_terms):
+                    continue
+                key = (full_url, title)
+                if key in seen:
+                    continue
+                seen.add(key)
+                items.append({
+                    "title": title,
+                    "date": date_text,
+                    "url": full_url,
+                    "source": site["source_label"],
+                })
+            time.sleep(0.15)
+
+        self.results.extend(items)
+        logger.info("%s: 遍历 %d 个页面，获取 %d 条", site["name"], len(visited), len(items))
+        return items
+
+    def crawl_courts(self):
+        """Crawl all configured official court websites."""
+        for site_key, site in COURT_SITES.items():
+            try:
+                self._crawl_court_site(site_key, site)
+            except Exception as exc:
+                logger.warning("%s 爬取失败: %s", site.get("name", site_key), exc)
+            time.sleep(0.5)
+        self.results.sort(key=lambda item: item.get("date", ""), reverse=True)
+
+    def crawl_sdcourt(self):
+        """Backward-compatible entry point for only the Shandong court site."""
+        self._crawl_court_site("sdcourt", COURT_SITES["sdcourt"])
+
     def crawl_all(self):
         """爬取所有网站"""
         logger.info(f"开始爬取，时间范围: 最近 {self.days} 天（从 {self.cutoff_date.strftime('%Y-%m-%d')} 至今）")
         start_time = time.time()
+
+        # 官网是山东高法案例的直接来源，不再依赖微信公众号。
+        self.crawl_courts()
+        time.sleep(1)
 
         # 原有网站
         self.crawl_flk_npc()
@@ -881,9 +1368,6 @@ class LawCrawler:
         self.crawl_china_pufa()
         time.sleep(1)
 
-        # 微信公众号
-        self.crawl_wechat_accounts()
-
         # 按日期降序排序
         self.results.sort(key=lambda x: x.get("date", ""), reverse=True)
 
@@ -896,7 +1380,7 @@ class LawCrawler:
         output_file = output_file or OUTPUT_FILE
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(f"法律信息爬取结果\n")
-            f.write(f"时间范围: 最近 {self.days} 天（从 {self.cutoff_date.strftime('%Y-%m-%d')} 至 {datetime.now().strftime('%Y-%m-%d')}）\n")
+            f.write(f"时间范围: {self.start_date.strftime('%Y-%m-%d')} 至 {self.end_date.strftime('%Y-%m-%d')}\n")
             f.write(f"爬取时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"共 {len(self.results)} 条\n")
             f.write("=" * 60 + "\n\n")
