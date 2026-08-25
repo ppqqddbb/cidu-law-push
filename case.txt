@@ -1,79 +1,120 @@
-法律案例过滤结果
-共 15 条
+最高人民法院案例信息
+时间范围: 最近 365 天（从 2025-08-25 至 2026-08-25）
+共 23 条
 ============================================================
 
-标题：“消失的知产案件”系列报道②—— 被“网”住的纠纷
+标题：学习新时代
 来源：最高人民法院
-日期：2026-08-21
-链接：https://www.court.gov.cn/zixun/xiangqing/509301.html
+日期：2026-08-24
+链接：https://www.court.gov.cn/xinshidai/gengduo/762.html
 
-标题：“执破直通”：有价值的活，该离场的清 ——看福建法院如何盘活230亿元资产、腾出3105万平方米空间
+标题：权威发布
 来源：最高人民法院
-日期：2026-08-17
-链接：https://www.court.gov.cn/zixun/xiangqing/508901.html
+日期：2026-08-24
+链接：https://www.court.gov.cn/fabu.html
 
-标题：低频嗡鸣日夜不休！法典守护百姓居家安宁 ——生态环境法典施行首案庭审直击
+标题：法院资讯
 来源：最高人民法院
-日期：2026-08-17
-链接：https://www.court.gov.cn/zixun/xiangqing/508891.html
+日期：2026-08-06
+链接：https://www.court.gov.cn/zixun.html
 
-标题：生态环境部、最高法、最高检联合发布推动生态环境损害赔偿制度改革进程的十大案例
+标题：指导性案例279号：西某工业软件有限公司诉广州沃某模具有限公司侵害计算机软件著作权纠纷案
 来源：最高人民法院
-日期：2026-08-15
-链接：https://www.court.gov.cn/zixun/xiangqing/508781.html
+日期：2026-02-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/490521.html
 
-标题：最高法发布海洋生态环境司法保护典型案例
+标题：指导性案例278号：福建恒某科技有限公司诉泉州日某流量仪器仪表有限公司因恶意提起知识产权诉讼损害责任纠...
 来源：最高人民法院
-日期：2026-08-14
-链接：https://www.court.gov.cn/zixun/xiangqing/508741.html
+日期：2026-02-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/490511.html
 
-标题：规范加盟市场 守护创业权益 ——聚焦商业特许经营典型案例
+标题：指导性案例277号：江苏宏某旋转补偿器科技有限公司诉江苏远某波纹管有限公司等侵害发明专利权纠纷案
 来源：最高人民法院
-日期：2026-08-13
-链接：https://www.court.gov.cn/zixun/xiangqing/508551.html
+日期：2026-02-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/490501.html
 
-标题：规范加盟市场 守护创业权益 ——聚焦商业特许经营典型案例
-来源：最高人民法院司法案例研究院
-日期：2026-08-13
-链接：https://www.court.gov.cn/zixun/xiangqing/508551.html
-
-标题：最高人民法院发布商业特许经营典型案例
+标题：指导性案例276号：诺某股份有限公司诉国家知识产权局、第三人戴某良发明专利权无效行政纠纷案
 来源：最高人民法院
-日期：2026-08-12
-链接：https://www.court.gov.cn/zixun/xiangqing/508501.html
+日期：2026-02-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/490491.html
 
-标题：为平台经济新业态设“边界”划“底线” ——最高法发布典型案例聚焦直播带货、虚假交易、虚拟财产等新业态...
+标题：指导性案例275号：江苏省金某种业科技有限公司诉江苏亲某农业产业发展有限公司侵害植物新品种权纠纷案
 来源：最高人民法院
-日期：2026-08-04
-链接：https://www.court.gov.cn/zixun/xiangqing/507731.html
+日期：2026-02-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/490481.html
 
-标题：为平台经济新业态设“边界”划“底线” ——最高法发布典型案例聚焦直播带货、虚假交易、虚拟财产等新业态...
-来源：最高人民法院司法案例研究院
-日期：2026-08-04
-链接：https://www.court.gov.cn/zixun/xiangqing/507731.html
-
-标题：最高人民法院发布依法规范平台经营、保护消费者合法权益典型案例
+标题：指导性案例274号：青岛青某重工有限公司诉青岛晨某机械设备有限公司侵害实用新型专利权纠纷案
 来源：最高人民法院
-日期：2026-08-03
-链接：https://www.court.gov.cn/zixun/xiangqing/507691.html
+日期：2026-02-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/490471.html
 
-标题：最高人民法院发布涉军维权司法典型案例
+标题：指导性案例273号：浙江吉某控股集团有限公司、浙江吉某汽车研究院有限公司诉威某汽车制造温州有限公司等侵...
 来源：最高人民法院
-日期：2026-07-31
-链接：https://www.court.gov.cn/zixun/xiangqing/507531.html
+日期：2026-02-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/490461.html
 
-标题：违约当担责，担责须合理 ——聚焦事业单位工作人员脱产参加全日制学历教育后违反服务期约定纠纷典型案例
+标题：指导性案例272号：艾某等危险驾驶案
 来源：最高人民法院
-日期：2026-07-30
-链接：https://www.court.gov.cn/zixun/xiangqing/507351.html
+日期：2026-02-13
+链接：https://www.court.gov.cn/shenpan/xiangqing/489331.html
 
-标题：违约当担责，担责须合理 ——聚焦事业单位工作人员脱产参加全日制学历教育后违反服务期约定纠纷典型案例
-来源：最高人民法院司法案例研究院
-日期：2026-07-30
-链接：https://www.court.gov.cn/zixun/xiangqing/507351.html
-
-标题：事业单位工作人员脱产参加全日制学历教育后违反服务期约定纠纷典型案例
+标题：指导性案例271号：王某群危险驾驶案
 来源：最高人民法院
-日期：2026-07-29
-链接：https://www.court.gov.cn/zixun/xiangqing/507291.html
+日期：2026-02-13
+链接：https://www.court.gov.cn/shenpan/xiangqing/489321.html
+
+标题：指导性案例270号：成某明危险驾驶案
+来源：最高人民法院
+日期：2026-02-13
+链接：https://www.court.gov.cn/shenpan/xiangqing/489311.html
+
+标题：指导性案例269号：刘某江交通肇事宣告无罪案
+来源：最高人民法院
+日期：2026-02-13
+链接：https://www.court.gov.cn/shenpan/xiangqing/489301.html
+
+标题：指导性案例268号：严某聪以危险方法危害公共安全案
+来源：最高人民法院
+日期：2026-02-13
+链接：https://www.court.gov.cn/shenpan/xiangqing/489291.html
+
+标题：法院建设
+来源：最高人民法院
+日期：2026-01-04
+链接：https://www.court.gov.cn/jianshe.html
+
+标题：公众互动
+来源：最高人民法院
+日期：2025-12-20
+链接：https://www.court.gov.cn/hudong.html
+
+标题：指导性案例267号：某文化传媒有限公司与游某梅执行实施案
+来源：最高人民法院
+日期：2025-08-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/474501.html
+
+标题：指导性案例266号：黄某欢诉某信用管理有限公司个人信息保护纠纷案
+来源：最高人民法院
+日期：2025-08-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/474491.html
+
+标题：指导性案例265号：罗某诉某科技有限公司隐私权、个人信息保护纠纷案
+来源：最高人民法院
+日期：2025-08-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/474481.html
+
+标题：指导性案例264号：某钢铁有限公司诉某电子商务股份有限公司侵权责任纠纷案
+来源：最高人民法院
+日期：2025-08-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/474471.html
+
+标题：指导性案例263号：某网络信息技术有限公司诉某信息科技有限公司不正当竞争纠纷案
+来源：最高人民法院
+日期：2025-08-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/474461.html
+
+标题：指导性案例262号：某科技有限公司诉某文化传媒有限公司不正当竞争纠纷案
+来源：最高人民法院
+日期：2025-08-28
+链接：https://www.court.gov.cn/shenpan/xiangqing/474451.html
 

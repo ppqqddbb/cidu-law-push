@@ -10,7 +10,7 @@ import time
 import ssl
 import logging
 from datetime import datetime, timedelta
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -20,7 +20,15 @@ try:
 except ImportError:
     create_urllib3_context = None
 
-from config import HEADERS, TIMEOUT, DEFAULT_DAYS, OUTPUT_FILE, SITES, WECHAT_ACCOUNTS, SOGOU_WEIXIN
+from config import (
+    HEADERS,
+    TIMEOUT,
+    DEFAULT_DAYS,
+    LAW_OUTPUT_FILE,
+    CASE_OUTPUT_FILE,
+    SITES,
+    COURT_CASE_SOURCE,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -62,6 +70,7 @@ class LawCrawler:
         # 为npc.gov.cn添加SSL适配器
         self.session.mount("https://www.npc.gov.cn", SSLAdapter())
         self.results = []
+        self.case_results = []
 
     def _fetch(self, url, encoding=None):
         """通用请求方法"""
@@ -75,6 +84,29 @@ class LawCrawler:
             return resp.text
         except Exception as e:
             logger.warning(f"请求失败: {url} -> {e}")
+            return None
+
+    def _browser_fetch(self, url):
+        """可选的 JS 页面兜底；未安装 Playwright 时返回 None。"""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            return None
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=True)
+                page = browser.new_page(
+                    user_agent=HEADERS.get("User-Agent"),
+                    locale="zh-CN",
+                    ignore_https_errors=True,
+                )
+                page.goto(url, wait_until="domcontentloaded", timeout=TIMEOUT * 1000)
+                page.wait_for_timeout(1000)
+                html = page.content()
+                browser.close()
+                return html
+        except Exception as exc:
+            logger.warning(f"浏览器获取失败: {url} -> {exc}")
             return None
 
     def _parse_date(self, date_str):
@@ -94,7 +126,28 @@ class LawCrawler:
         dt = self._parse_date(date_str)
         if dt is None:
             return False
-        return dt >= self.cutoff_date
+        return dt.date() >= self.cutoff_date.date()
+
+    def _extract_date(self, text):
+        """从列表项或详情页文本中提取常见中文/数字日期。"""
+        if not text:
+            return ""
+        text = str(text)
+        patterns = (
+            r"(20\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?",
+            r"(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})",
+            r"(20\d{2})(\d{2})(\d{2})",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    return datetime(
+                        int(match.group(1)), int(match.group(2)), int(match.group(3))
+                    ).strftime("%Y-%m-%d")
+                except ValueError:
+                    continue
+        return ""
 
 
 
@@ -338,6 +391,149 @@ class LawCrawler:
         logger.info(f"司法部: 获取 {len(items)} 条")
 
     # ==================== 最高人民法院 ====================
+    def crawl_court_case_77(self):
+        """爬取最高人民法院审判栏目 77（指导案例/法律案例）并保存到 case.txt。"""
+        logger.info(
+            "开始爬取: "
+            + " -> ".join(COURT_CASE_SOURCE.get("breadcrumb", []))
+        )
+        page_url = COURT_CASE_SOURCE["list_url"]
+        html = self._fetch(page_url)
+        if not html:
+            logger.warning("最高人民法院案例栏目 77 获取失败")
+            return []
+
+        soup = BeautifulSoup(html, "html.parser")
+        items = []
+        seen = set()
+        for link in soup.find_all("a", href=True):
+            title = " ".join(link.get_text(" ", strip=True).split())
+            href = link.get("href", "").strip()
+            if not title or len(title) < 4 or not href:
+                continue
+            if href.startswith(("#", "javascript:", "mailto:")):
+                continue
+
+            full_url = urljoin(page_url, href)
+            parsed = urlparse(full_url)
+            if parsed.hostname and parsed.hostname.lower() not in {
+                "court.gov.cn",
+                "www.court.gov.cn",
+            }:
+                continue
+            # 排除栏目页、分页和导航链接，只保留详情页。
+            if "/shenpan/gengduo/" in parsed.path.lower():
+                continue
+
+            container = link.find_parent(["li", "tr", "article", "dd", "div"])
+            context = container.get_text(" ", strip=True) if container else title
+            date_text = self._extract_date(context) or self._extract_date(href)
+
+            if not date_text:
+                detail_html = self._fetch(full_url)
+                date_text = self._extract_date(detail_html or "")
+            if not date_text or not self._is_in_range(date_text):
+                continue
+
+            key = (title, full_url)
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(
+                {
+                    "title": title,
+                    "date": date_text,
+                    "url": full_url,
+                    "source": COURT_CASE_SOURCE["source_label"],
+                }
+            )
+
+        self.case_results = items
+        # 保留在内存总结果中，写入文件时会与法规结果分流。
+        existing = {(item.get("title"), item.get("url")) for item in self.results}
+        for item in items:
+            if (item["title"], item["url"]) not in existing:
+                self.results.append(item)
+        logger.info(f"最高人民法院案例栏目 77: 获取 {len(items)} 条")
+        return items
+
+    def crawl_legal_portal(self, site_key):
+        """抓取威科先行、北大法宝等门户公开可访问的法律信息。"""
+        site = SITES[site_key]
+        logger.info(f"开始爬取: {site['source_label']}")
+        items = []
+        seen = set()
+        entry_urls = site.get("entry_urls", [site["base_url"]])
+        allowed_hosts = {host.lower() for host in site.get("allowed_hosts", [])}
+        keywords = re.compile(
+            r"法律|法规|司法解释|案例|裁判|政策|规章|合规|解读|通知|公告|判决|仲裁",
+            re.I,
+        )
+
+        for page_url in entry_urls:
+            html = self._fetch(page_url)
+            if not html:
+                html = self._browser_fetch(page_url)
+            if not html:
+                logger.warning(f"{site['source_label']}: 入口页面不可访问，可能需要登录")
+                continue
+            soup = BeautifulSoup(html, "html.parser")
+            links = soup.find_all("a", href=True)
+            if not links:
+                rendered_html = self._browser_fetch(page_url)
+                if rendered_html:
+                    soup = BeautifulSoup(rendered_html, "html.parser")
+                    links = soup.find_all("a", href=True)
+            for link in links[:300]:
+                title = " ".join(link.get_text(" ", strip=True).split())
+                href = link.get("href", "").strip()
+                if not title or len(title) < 6 or not href:
+                    continue
+                if href.startswith(("#", "javascript:", "mailto:")):
+                    continue
+                full_url = urljoin(page_url, href)
+                parsed = urlparse(full_url)
+                if parsed.scheme not in ("http", "https"):
+                    continue
+                if allowed_hosts and parsed.hostname and parsed.hostname.lower() not in allowed_hosts:
+                    continue
+                if full_url.rstrip("/") == page_url.rstrip("/"):
+                    continue
+                if re.search(r"登录|注册|首页|关于我们|联系我们|帮助中心|下载|客服", title):
+                    continue
+
+                parent = link.find_parent(["li", "article", "tr", "dd", "section"])
+                context = parent.get_text(" ", strip=True) if parent else title
+                date_text = self._extract_date(context) or self._extract_date(href)
+                if not date_text and not keywords.search(title):
+                    continue
+                if not date_text:
+                    # 门户首页经常只显示标题，日期位于详情页；仅对疑似文章链接补取。
+                    detail_html = self._fetch(full_url)
+                    date_text = self._extract_date(detail_html or "")
+                if not date_text or not self._is_in_range(date_text):
+                    continue
+
+                key = (title, full_url)
+                if key in seen:
+                    continue
+                seen.add(key)
+                items.append(
+                    {
+                        "title": title,
+                        "date": date_text,
+                        "url": full_url,
+                        "source": site["source_label"],
+                    }
+                )
+
+        existing = {(item.get("title"), item.get("url")) for item in self.results}
+        for item in items:
+            if (item["title"], item["url"]) not in existing:
+                self.results.append(item)
+        logger.info(f"{site['source_label']}: 获取 {len(items)} 条")
+        return items
+
     def crawl_court_gov(self):
         """爬取最高人民法院 - 只爬取司法解释、典型案例等法律内容"""
         logger.info("开始爬取: 最高人民法院")
@@ -346,7 +542,6 @@ class LawCrawler:
         # 只爬取法律相关栏目
         urls_to_try = [
             f"{site['base_url']}/zixun/gengduo/23.html",  # 司法解释
-            f"{site['base_url']}/zixun/gengduo/24.html",  # 典型案例
             f"{site['base_url']}/zixun/gengduo/25.html",  # 司法文件
             f"{site['base_url']}/zixun/gengduo/26.html",  # 工作报告
         ]
@@ -857,7 +1052,7 @@ class LawCrawler:
         logger.info(f"开始爬取，时间范围: 最近 {self.days} 天（从 {self.cutoff_date.strftime('%Y-%m-%d')} 至今）")
         start_time = time.time()
 
-        # 原有网站
+        # 官方五个法规来源，以及新增的两个法律专业门户。
         self.crawl_flk_npc()
         time.sleep(1)
         self.crawl_gov_cn()
@@ -868,21 +1063,12 @@ class LawCrawler:
         time.sleep(1)
         self.crawl_court_gov()
         time.sleep(1)
-        
-        # 新增公众号和网站
-        self.crawl_spp_gov()
+        self.crawl_court_case_77()
         time.sleep(1)
-        self.crawl_wenshu_court()
+        self.crawl_legal_portal("wkinfo")
         time.sleep(1)
-        self.crawl_court_research()
+        self.crawl_legal_portal("pkulaw")
         time.sleep(1)
-        self.crawl_tianping()
-        time.sleep(1)
-        self.crawl_china_pufa()
-        time.sleep(1)
-
-        # 微信公众号
-        self.crawl_wechat_accounts()
 
         # 按日期降序排序
         self.results.sort(key=lambda x: x.get("date", ""), reverse=True)
@@ -891,56 +1077,47 @@ class LawCrawler:
         logger.info(f"爬取完成，共获取 {len(self.results)} 条法律信息，耗时 {elapsed:.1f} 秒")
 
     # ==================== 输出结果 ====================
-    def save_results(self, output_file=None, fetch_summary=False):
-        """保存结果到文件"""
-        output_file = output_file or OUTPUT_FILE
+    def save_core_outputs(self, law_output=None, case_output=None):
+        """按来源拆分核心法规与最高法案例，分别写入 law.txt/case.txt。"""
+        law_output = law_output or LAW_OUTPUT_FILE
+        case_output = case_output or CASE_OUTPUT_FILE
+        case_keys = {(item.get("title"), item.get("url")) for item in self.case_results}
+        law_items = [
+            item
+            for item in self.results
+            if (item.get("title"), item.get("url")) not in case_keys
+        ]
+        self._write_items_file(law_output, law_items, "法律法规信息")
+        self._write_items_file(case_output, self.case_results, "最高人民法院案例信息")
+        logger.info(
+            f"核心文件已更新: law.txt {len(law_items)} 条，case.txt {len(self.case_results)} 条"
+        )
+
+    def _write_items_file(self, output_file, items, heading):
+        """写入统一的标题、来源、日期、链接格式。"""
         with open(output_file, "w", encoding="utf-8") as f:
-            f.write(f"法律信息爬取结果\n")
-            f.write(f"时间范围: 最近 {self.days} 天（从 {self.cutoff_date.strftime('%Y-%m-%d')} 至 {datetime.now().strftime('%Y-%m-%d')}）\n")
-            f.write(f"爬取时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"共 {len(self.results)} 条\n")
+            f.write(f"{heading}\n")
+            f.write(
+                f"时间范围: 最近 {self.days} 天（从 {self.cutoff_date.strftime('%Y-%m-%d')} 至 {datetime.now().strftime('%Y-%m-%d')}）\n"
+            )
+            f.write(f"共 {len(items)} 条\n")
             f.write("=" * 60 + "\n\n")
-
-            for item in self.results:
-                # 清理标题中的换行符和多余空白
-                title = ' '.join(item['title'].split())
-                f.write(f"{title}\n")
-                f.write(f"来源：{item['source']}｜日期：{item['date']}\n")
-                f.write(f"链接：{item['url']}\n")
-                if fetch_summary:
-                    summary = self._get_summary(item["url"])
-                    if summary:
-                        f.write(f"摘要：{summary}\n")
-                f.write("\n")
-
-        logger.info(f"结果已保存到: {output_file}")
-        return output_file
-
-    def print_results(self):
-        """打印结果到控制台"""
-        print(f"\n{'='*60}")
-        print(f"法律信息爬取结果（最近 {self.days} 天）")
-        print(f"共 {len(self.results)} 条")
-        print(f"{'='*60}\n")
-
-        for item in self.results:
-            print(item['title'])
-            print(f"来源：{item['source']}｜日期：{item['date']}")
-            print(f"链接：{item['url']}")
-            print()
-
+            for item in sorted(items, key=lambda value: value.get("date", ""), reverse=True):
+                title = " ".join(item.get("title", "").split())
+                f.write(f"标题：{title}\n")
+                f.write(f"来源：{item.get('source', '')}\n")
+                f.write(f"日期：{item.get('date', '')}\n")
+                f.write(f"链接：{item.get('url', '')}\n\n")
 
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="法律信息爬虫")
     parser.add_argument("--days", type=int, default=DEFAULT_DAYS, help=f"时间范围（天），默认 {DEFAULT_DAYS}")
-    parser.add_argument("--output", type=str, default=None, help="输出文件路径")
     args = parser.parse_args()
 
     crawler = LawCrawler(days=args.days)
     crawler.crawl_all()
-    crawler.print_results()
-    crawler.save_results(args.output)
+    crawler.save_core_outputs()
 
 
 if __name__ == "__main__":
