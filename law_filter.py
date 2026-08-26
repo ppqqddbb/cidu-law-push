@@ -101,6 +101,20 @@ class LawFilter:
                     results.append(current_item)
                     current_item = {}
                 continue
+
+            # The crawler writes source and date as separate fields.
+            if line.startswith("\u6807\u9898\uff1a"):
+                current_item["title"] = line[3:]
+                continue
+            if line.startswith("\u6765\u6e90\uff1a"):
+                current_item["source"] = line[3:]
+                continue
+            if line.startswith("\u65e5\u671f\uff1a"):
+                current_item["date"] = line[3:]
+                continue
+            if line.startswith("\u94fe\u63a5\uff1a"):
+                current_item["url"] = line[3:]
+                continue
             
             # 跳过文件头部信息
             if line.startswith("法律信息爬取结果"):

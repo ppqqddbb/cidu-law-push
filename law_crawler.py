@@ -1078,7 +1078,7 @@ class LawCrawler:
 
     # ==================== 输出结果 ====================
     def save_core_outputs(self, law_output=None, case_output=None):
-        """按来源拆分核心法规与最高法案例，分别写入 law.txt/case.txt。"""
+        """按记录分类写入法律条文和指导案例文件。"""
         law_output = law_output or LAW_OUTPUT_FILE
         case_output = case_output or CASE_OUTPUT_FILE
         case_keys = {(item.get("title"), item.get("url")) for item in self.case_results}
@@ -1090,24 +1090,36 @@ class LawCrawler:
         self._write_items_file(law_output, law_items, "法律法规信息")
         self._write_items_file(case_output, self.case_results, "最高人民法院案例信息")
         logger.info(
-            f"核心文件已更新: law.txt {len(law_items)} 条，case.txt {len(self.case_results)} 条"
+            f"核心文件已更新: {law_output} {len(law_items)} 条，{case_output} {len(self.case_results)} 条"
         )
 
-    def _write_items_file(self, output_file, items, heading):
+    def save_items_file(self, output_file, items):
+        """将爬取记录按固定四字段格式写入文件。"""
+        self._write_items_file(output_file, items, "")
+
+    def _write_items_file_legacy(self, output_file, items, heading):
         """写入统一的标题、来源、日期、链接格式。"""
         with open(output_file, "w", encoding="utf-8") as f:
-            f.write(f"{heading}\n")
-            f.write(
-                f"时间范围: 最近 {self.days} 天（从 {self.cutoff_date.strftime('%Y-%m-%d')} 至 {datetime.now().strftime('%Y-%m-%d')}）\n"
-            )
-            f.write(f"共 {len(items)} 条\n")
-            f.write("=" * 60 + "\n\n")
+            if heading:
+                f.write(f"{heading}\n")
+                f.write(f"共 {len(items)} 条\n")
+                f.write("=" * 60 + "\n\n")
             for item in sorted(items, key=lambda value: value.get("date", ""), reverse=True):
                 title = " ".join(item.get("title", "").split())
                 f.write(f"标题：{title}\n")
                 f.write(f"来源：{item.get('source', '')}\n")
                 f.write(f"日期：{item.get('date', '')}\n")
                 f.write(f"链接：{item.get('url', '')}\n\n")
+
+    def _write_items_file(self, output_file, items, heading):
+        """Write records in the required UTF-8 four-field format."""
+        with open(output_file, "w", encoding="utf-8") as f:
+            for item in sorted(items, key=lambda value: value.get("date", ""), reverse=True):
+                title = " ".join(str(item.get("title", "")).split())
+                f.write(f"\u6807\u9898\uff1a{title}\n")
+                f.write(f"\u6765\u6e90\uff1a{item.get('source', '')}\n")
+                f.write(f"\u65e5\u671f\uff1a{item.get('date', '')}\n")
+                f.write(f"\u94fe\u63a5\uff1a{item.get('url', '')}\n\n")
 
 def main():
     import argparse

@@ -21,10 +21,13 @@ DEFAULT_DAYS = 7
 
 # 输出文件路径
 OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
+# result.txt stores the complete crawl before Dify filtering.
+RESULT_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "result.txt")
 LAW_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "law.txt")
 CASE_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "case.txt")
 
-# 保留旧过滤脚本所需的配置；当前主流程不再调用大模型过滤。
+# Dify agent connection settings. Environment variables can override these
+# values when run_filter.py is started.
 DIFY_API_URL = "http://ciduai.daneng.cc/v1"
 DIFY_API_KEY = "app-9vafjQOyvM8j25Y4u43P8lLx"
 

@@ -72,6 +72,7 @@ sogou_test_*.html
 *.tmp
 *.temp
 run_*.py
+!run_filter.py
 run_*.ps1
 
 # ============================================
