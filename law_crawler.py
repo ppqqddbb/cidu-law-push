@@ -62,13 +62,23 @@ class SSLAdapter(HTTPAdapter):
 
 
 class LawCrawler:
-    def __init__(self, days=None):
+    def __init__(self, days=None, start_date=None, end_date=None):
         self.days = days or DEFAULT_DAYS
-        self.cutoff_date = datetime.now() - timedelta(days=self.days)
+        # Treat the first day as inclusive.  Comparing against midnight avoids
+        # dropping articles published earlier on the cutoff calendar day.
+        self.cutoff_date = datetime.combine(
+            (datetime.now() - timedelta(days=self.days)).date(), datetime.min.time()
+        )
+        self.start_date = self._parse_date(start_date) if start_date else self.cutoff_date
+        parsed_end = self._parse_date(end_date) if end_date else None
+        self.end_date = (parsed_end + timedelta(days=1) - timedelta(microseconds=1)
+                         if parsed_end else datetime.now())
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
         # 为npc.gov.cn添加SSL适配器
         self.session.mount("https://www.npc.gov.cn", SSLAdapter())
+        # 山东高法部分节点会主动关闭默认 TLS 握手，使用兼容适配器。
+        self.session.mount("https://www.sdcourt.gov.cn", SSLAdapter())
         self.results = []
         self.case_results = []
 
@@ -1047,6 +1057,159 @@ class LawCrawler:
         return ""
 
     # ==================== 主爬取流程 ====================
+    @staticmethod
+    def _normalise_court_url(url):
+        parts = urlsplit(url)
+        return urlunsplit((parts.scheme or "https", parts.netloc.lower(), parts.path or "/", parts.query, ""))
+
+    def _extract_court_date(self, text):
+        """Extract the first full calendar date from list-row text or a URL."""
+        if not text:
+            return ""
+        value = " ".join(str(text).replace("\xa0", " ").split())
+        patterns = (
+            r"(20\d{2})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?",
+            r"(20\d{2})(\d{2})(\d{2})",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, value)
+            if not match:
+                continue
+            try:
+                date_value = datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+            except ValueError:
+                continue
+            return date_value.strftime("%Y-%m-%d")
+        return ""
+
+    def _court_link_context(self, link):
+        """Return text from the link and its nearest list/table containers."""
+        chunks = [" ".join(link.get_text(" ", strip=True).split())]
+        node = link
+        fallback = ""
+        for _ in range(6):
+            if node is None:
+                break
+            text = " ".join(node.get_text(" ", strip=True).split())
+            if text and node.name not in {"body", "html"} and len(text) > len(fallback):
+                fallback = text
+            if text and text not in chunks and node.name in {"li", "tr", "article", "dd", "dt"}:
+                chunks.append(text)
+                break
+            node = node.parent
+        if len(chunks) == 1 and fallback and fallback not in chunks:
+            chunks.append(fallback)
+        return " ".join(chunks)
+
+    def _crawl_court_site(self, site_key, site):
+        """Crawl one public court site using requests and ordinary HTML links."""
+        logger.info("开始爬取: %s", site["name"])
+        base_url = self._normalise_court_url(site["base_url"])
+        base_host = urlsplit(base_url).netloc.lower().removeprefix("www.")
+        allowed_hosts = {base_host}
+        allowed_hosts.update(host.lower().removeprefix("www.") for host in site.get("domains", []))
+        seeds = [self._normalise_court_url(url) for url in site.get("seed_urls", [])]
+        queue = [(url, 0) for url in seeds if url]
+        queued = {url for url, _ in queue}
+        visited = set()
+        seen = set()
+        items = []
+        max_pages = int(site.get("max_pages", 120))
+        max_depth = int(site.get("max_depth", 3))
+        keywords = tuple(site.get("keywords", ()))
+        case_terms = tuple(site.get("case_terms", keywords))
+        skip_extensions = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".css", ".js",
+                           ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip", ".mp4")
+        pagination_terms = ("下一页", "下页", "上一页", "尾页", "首页", "next", "page=")
+
+        while queue and len(visited) < max_pages:
+            page_url, depth = queue.pop(0)
+            page_url = self._normalise_court_url(page_url)
+            if page_url in visited or depth > max_depth:
+                continue
+            visited.add(page_url)
+            html = self._fetch(page_url)
+            if not html and page_url.startswith("https://"):
+                # Some judicial CMS nodes expose the same public page over HTTP
+                # while their HTTPS endpoint intermittently resets connections.
+                html = self._fetch(page_url.replace("https://", "http://", 1))
+            if not html:
+                continue
+            soup = BeautifulSoup(html, "html.parser")
+            links = soup.find_all("a", href=True)
+            for link in links:
+                href = (link.get("href") or "").strip()
+                if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                    continue
+                if "[pagevisitpath:" in href.lower() or "pagevisitpath" in href.lower():
+                    continue
+                full_url = self._normalise_court_url(urljoin(page_url, href))
+                parts = urlsplit(full_url)
+                host = parts.netloc.lower().removeprefix("www.")
+                if host not in allowed_hosts or parts.path.lower().endswith(skip_extensions):
+                    continue
+
+                title = " ".join(link.get_text(" ", strip=True).split())
+                if not title:
+                    title = " ".join((link.get("title") or "").split())
+                context = self._court_link_context(link)
+                context_lower = context.lower()
+                is_pagination = any(term in context_lower or term in full_url.lower()
+                                    for term in pagination_terms)
+                is_relevant = any(term in context for term in keywords)
+
+                if (depth < max_depth and full_url not in visited and full_url not in queued
+                        and (is_relevant or is_pagination)):
+                    queued.add(full_url)
+                    queue.append((full_url, depth + 1))
+
+                if len(title) < 4 or full_url == page_url:
+                    continue
+                date_text = self._extract_court_date(context) or self._extract_court_date(full_url)
+                if not date_text or not self._is_in_range(date_text):
+                    continue
+                if title in {"更多", "详细", "详情", "查看", "返回", "关闭"}:
+                    continue
+                # The homepage and section pages often carry today's date in a
+                # shared header.  Keep only links that look like case material,
+                # and explicitly discard common section/navigation labels.
+                section_titles = {
+                    "法院公告", "审判公开", "司法公开", "新闻中心", "更多新闻",
+                    "执行公开", "审务公开", "裁判文书", "网站首页", "首页",
+                }
+                candidate_text = f"{title} {context} {parts.path}"
+                if title in section_titles or not any(term in candidate_text for term in case_terms):
+                    continue
+                key = (full_url, title)
+                if key in seen:
+                    continue
+                seen.add(key)
+                items.append({
+                    "title": title,
+                    "date": date_text,
+                    "url": full_url,
+                    "source": site["source_label"],
+                })
+            time.sleep(0.15)
+
+        self.results.extend(items)
+        logger.info("%s: 遍历 %d 个页面，获取 %d 条", site["name"], len(visited), len(items))
+        return items
+
+    def crawl_courts(self):
+        """Crawl all configured official court websites."""
+        for site_key, site in COURT_SITES.items():
+            try:
+                self._crawl_court_site(site_key, site)
+            except Exception as exc:
+                logger.warning("%s 爬取失败: %s", site.get("name", site_key), exc)
+            time.sleep(0.5)
+        self.results.sort(key=lambda item: item.get("date", ""), reverse=True)
+
+    def crawl_sdcourt(self):
+        """Backward-compatible entry point for only the Shandong court site."""
+        self._crawl_court_site("sdcourt", COURT_SITES["sdcourt"])
+
     def crawl_all(self):
         """爬取所有网站"""
         logger.info(f"开始爬取，时间范围: 最近 {self.days} 天（从 {self.cutoff_date.strftime('%Y-%m-%d')} 至今）")

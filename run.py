@@ -13,17 +13,26 @@ def main():
     # 解析命令行参数
     days = DEFAULT_DAYS
     
-    if len(sys.argv) > 1:
+    positional_days = [value for value in sys.argv[1:] if not value.startswith("--")]
+    # Remove values belonging to --start/--end from positional parsing.
+    positional_days = [value for value in positional_days
+                       if value not in {start_value, end_value}]
+    if positional_days:
         try:
-            days = int(sys.argv[1])
+            days = int(positional_days[0])
         except ValueError:
             print("错误: 天数必须是整数")
             print("用法: python run.py [天数]")
             print("示例: python run.py 7")
             sys.exit(1)
     
-    print(f"开始爬取最近 {days} 天的法律信息...")
-    print(f"时间范围: {(datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')} 至 {datetime.now().strftime('%Y-%m-%d')}")
+    # 创建爬虫实例
+    crawler = LawCrawler(days=days, start_date=start_value, end_date=end_value)
+    if start_value or end_value:
+        print("开始爬取指定日期范围的法律信息...")
+    else:
+        print(f"开始爬取最近 {days} 天的法律信息...")
+    print(f"时间范围: {crawler.start_date.strftime('%Y-%m-%d')} 至 {crawler.end_date.strftime('%Y-%m-%d')}")
     print("=" * 60)
     
     api_url = os.getenv("DIFY_API_URL", DIFY_API_URL)
