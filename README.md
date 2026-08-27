@@ -12,3 +12,6 @@ cd D:\File\VSCodeFile\QDHB\Law-Push
 # Linux/macOS：安装每天 08:00 的 cron 任务
 chmod +x install_daily_filter.sh
 ./install_daily_filter.sh
+
+# 取消定时运行命令
+Unregister-ScheduledTask -TaskName "Law-Push-Filtered-Daily" -Confirm:$false

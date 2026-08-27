@@ -1,7 +1,7 @@
 param(
     [string]$TaskName = "Law-Push-Filtered-Daily",
     [string]$PythonExecutable = "python",
-    [string]$RunAt = "08:00"
+    [string]$RunAt = "08:30"
 )
 
 $ErrorActionPreference = "Stop"
