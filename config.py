@@ -24,7 +24,7 @@ OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
 # result.txt stores the complete crawl before Dify filtering.
 RESULT_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "result.txt")
 LAW_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "law.txt")
-CASE_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "case.txt")
+CASE_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "case.csv")
 
 # Dify agent connection settings. Environment variables can override these
 # values when run_filter.py is started.

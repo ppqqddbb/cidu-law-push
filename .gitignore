@@ -56,6 +56,8 @@ dist-ssr/
 # ============================================
 .test-tmp/
 test_*.py
+!tests/test_filter_outputs.py
+!tests/test_kingdee_case.py
 test_*.html
 test_*.log
 test_*.js
@@ -123,6 +125,7 @@ Thumbs.db
 # 环境变量 / 敏感配置
 # ============================================
 .env
+kingdee.local.json
 .env.local
 .env.production
 .env.development

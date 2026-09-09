@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta
 from typing import Iterable
 
 import requests
+from file_dates import format_file_date
 
 from config import (
     CASE_OUTPUT_FILE,
@@ -32,6 +33,7 @@ from config import (
     RESULT_OUTPUT_FILE,
 )
 from law_crawler import LawCrawler
+from kingdee_case import KingdeeCaseClient, load_config
 
 
 logger = logging.getLogger("law-push-filter")
@@ -202,7 +204,9 @@ def unique_in_range(
     return sorted(output, key=lambda item: str(item.get("date", "")), reverse=True)
 
 
-def run(days: int, agent: DifyAgent, keep_on_error: bool = False) -> tuple[int, int, int]:
+def run(days: int, agent: DifyAgent, keep_on_error: bool = False,
+        file_date: str | date | None = None, case_client: KingdeeCaseClient | None = None,
+        sync_kb: str | None = None) -> tuple[int, int, int]:
     if days < 1:
         raise ValueError("days must be at least 1")
     end_date = date.today()
@@ -243,8 +247,12 @@ def run(days: int, agent: DifyAgent, keep_on_error: bool = False) -> tuple[int, 
     # overwrite the last successful result with unfiltered data.
     crawler.results = law_items + case_items
     crawler.case_results = case_items
-    crawler.save_core_outputs(LAW_OUTPUT_FILE, CASE_OUTPUT_FILE)
+    generated_date = format_file_date(file_date if file_date is not None else datetime.now())
+    crawler.save_core_outputs(LAW_OUTPUT_FILE, CASE_OUTPUT_FILE, file_date=generated_date)
     logger.info("saved law=%d, case=%d, other=%d", len(law_items), len(case_items), other_count)
+    if case_client is not None:
+        count = case_client.send_cases(case_items, generated_date, sync_kb)
+        logger.info("Kingdee case push succeeded: %d records", count)
     return len(law_items), len(case_items), other_count
 
 
@@ -254,6 +262,12 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=60, help="Dify request timeout in seconds")
     parser.add_argument("--retries", type=int, default=2, help="retries per item")
     parser.add_argument("--keep-on-error", action="store_true", help="keep an item if Dify classification fails")
+    parser.add_argument("--file-date", type=format_file_date, metavar="YYYY-MM-DD HH:MM:SS",
+                        help="output file date (default: local date when saving)")
+    parser.add_argument("--push-case", action="store_true", help="push filtered cases to Kingdee after saving")
+    parser.add_argument("--kingdee-config", help="Kingdee JSON config file")
+    parser.add_argument("--kingdee-timeout", type=int, default=60)
+    parser.add_argument("--sync-kb", help="value for r8p0_sync_kb")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -263,7 +277,10 @@ def main() -> int:
         logger.error("DIFY_API_KEY is empty")
         return 1
     try:
-        run(args.days, DifyAgent(api_url, api_key, args.timeout, args.retries), args.keep_on_error)
+        case_client = (KingdeeCaseClient(load_config(args.kingdee_config), args.kingdee_timeout)
+                       if args.push_case else None)
+        run(args.days, DifyAgent(api_url, api_key, args.timeout, args.retries),
+            args.keep_on_error, args.file_date, case_client, args.sync_kb)
     except Exception:
         logger.exception("filtered crawl failed")
         return 1

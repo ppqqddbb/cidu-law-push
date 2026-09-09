@@ -4,15 +4,18 @@
 支持按时间范围筛选，输出格式化的法律信息
 """
 
+import csv
 import re
 import json
 import time
 import ssl
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import requests
+from file_dates import format_file_date
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 try:
@@ -42,18 +45,13 @@ class SSLAdapter(HTTPAdapter):
     
     def init_poolmanager(self, *args, **kwargs):
         if create_urllib3_context:
-            # 创建最宽松的SSL上下文
             ctx = create_urllib3_context(
                 ciphers='ALL:@SECLEVEL=0',
-                ssl_version=ssl.PROTOCOL_TLSv1_2
+                ssl_minimum_version=ssl.TLSVersion.TLSv1_2,
+                ssl_maximum_version=ssl.TLSVersion.TLSv1_2,
             )
-            # 移除所有不必要的SSL选项限制
-            ctx.options &= ~ssl.OP_NO_SSLv3
-            ctx.options &= ~ssl.OP_NO_TLSv1
-            ctx.options &= ~ssl.OP_NO_TLSv1_1
-            ctx.options &= ~ssl.OP_NO_TLSv1_2
-            ctx.options &= ~ssl.OP_NO_TLSv1_3
-            ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
+            # OpenSSL defines this flag as 0x4; Python < 3.12 may not expose it.
+            ctx.options |= getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
             self.ssl_context = ctx
@@ -1240,18 +1238,19 @@ class LawCrawler:
         logger.info(f"爬取完成，共获取 {len(self.results)} 条法律信息，耗时 {elapsed:.1f} 秒")
 
     # ==================== 输出结果 ====================
-    def save_core_outputs(self, law_output=None, case_output=None):
-        """按记录分类写入法律条文和指导案例文件。"""
+    def save_core_outputs(self, law_output=None, case_output=None, file_date=None):
+        """按记录分类写入五字段 TXT 和 CSV，文件日期为生成日期。"""
         law_output = law_output or LAW_OUTPUT_FILE
         case_output = case_output or CASE_OUTPUT_FILE
+        file_date = format_file_date(file_date if file_date is not None else datetime.now())
         case_keys = {(item.get("title"), item.get("url")) for item in self.case_results}
         law_items = [
             item
             for item in self.results
             if (item.get("title"), item.get("url")) not in case_keys
         ]
-        self._write_items_file(law_output, law_items, "法律法规信息")
-        self._write_items_file(case_output, self.case_results, "最高人民法院案例信息")
+        self._write_items_file(law_output, law_items, "法律法规信息", file_date)
+        self._write_items_file(case_output, self.case_results, "最高人民法院案例信息", file_date)
         logger.info(
             f"核心文件已更新: {law_output} {len(law_items)} 条，{case_output} {len(self.case_results)} 条"
         )
@@ -1274,15 +1273,29 @@ class LawCrawler:
                 f.write(f"日期：{item.get('date', '')}\n")
                 f.write(f"链接：{item.get('url', '')}\n\n")
 
-    def _write_items_file(self, output_file, items, heading):
-        """Write records in the required UTF-8 four-field format."""
-        with open(output_file, "w", encoding="utf-8") as f:
-            for item in sorted(items, key=lambda value: value.get("date", ""), reverse=True):
-                title = " ".join(str(item.get("title", "")).split())
-                f.write(f"\u6807\u9898\uff1a{title}\n")
-                f.write(f"\u6765\u6e90\uff1a{item.get('source', '')}\n")
-                f.write(f"\u65e5\u671f\uff1a{item.get('date', '')}\n")
-                f.write(f"\u94fe\u63a5\uff1a{item.get('url', '')}\n\n")
+    def _write_items_file(self, output_file, items, heading, file_date=None):
+        """Keep raw snapshots unchanged; export dated results as TXT and CSV."""
+        fields = [("标题", "title"), ("来源", "source"),
+                  ("日期", "date"), ("链接", "url")]
+        if file_date is not None:
+            fields.append(("文件日期", "file_date"))
+        rows = []
+        for item in sorted(items, key=lambda value: value.get("date", ""), reverse=True):
+            row = dict(item)
+            row["title"] = " ".join(str(item.get("title", "")).split())
+            row["file_date"] = file_date
+            rows.append([row.get(key, "") for _, key in fields])
+        if Path(output_file).suffix.lower() == ".csv":
+            with open(output_file, "w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([label for label, _ in fields])
+                writer.writerows(rows)
+        else:
+            with open(output_file, "w", encoding="utf-8") as f:
+                for row in rows:
+                    for (label, _), value in zip(fields, row):
+                        f.write(f"{label}：{value}\n")
+                    f.write("\n")
 
 def main():
     import argparse
