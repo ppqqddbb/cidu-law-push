@@ -126,6 +126,8 @@ Thumbs.db
 # ============================================
 .env
 kingdee.local.json
+kb_sync.local.json
+!tests/test_kb_sync.py
 .env.local
 .env.production
 .env.development

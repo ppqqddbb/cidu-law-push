@@ -38,6 +38,14 @@ python .\push_case.py .\case.csv
 # 当前接口未提供去重约定，重复运行或重复发送同一文件可能创建重复记录。
 # 原定时任务仅保存文件；需推送时在定时任务的 run_filter.py 参数中加入 --push-case。
 
+# 将数据库中 fk_r8p0_sync_kb=“是”的案例同步到 Dify 法律案例知识库：
+# 先设置 DB_HOST、DB_NAME、DB_USER、DB_PASSWORD、DIFY_KB_API_KEY，执行：
+python .\sync_cases_kb.py --dry-run
+python .\sync_cases_kb.py
+# 默认表名 r8p0_case、数据集 ID SCSruW9H3bsFMvFxBk1n4eUz；可用 DB_TABLE、
+# DIFY_KB_DATASET_ID 覆盖。DIFY_KB_API_KEY 是 Dify API 密钥，不是数据集 ID。
+# 只有 Dify 成功接收后才将数据库同步字段更新为“否”；失败记录会保留“是”以便重试。
+
 # Dify 暂时不可用时，明确允许按已有来源继续保存
 python .\run_filter.py 30 --keep-on-error
 

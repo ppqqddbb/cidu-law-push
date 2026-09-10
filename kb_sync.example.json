@@ -1,0 +1,19 @@
+{
+  "dify": {
+    "base_url": "http://ciduai.daneng.cc/v1",
+    "api_key": "",
+    "dataset_name": "法律案例知识库",
+    "dataset_id": ""
+  },
+  "database": {
+    "driver": "postgresql",
+    "host": "",
+    "port": 5432,
+    "database": "",
+    "user": "",
+    "password": "",
+    "schema": "public",
+    "table": ""
+  },
+  "state_file": "kb_sync_state.sqlite3"
+}
