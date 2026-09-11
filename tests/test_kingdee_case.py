@@ -47,7 +47,7 @@ class KingdeeCaseTests(unittest.TestCase):
         self.assertEqual(case_call.kwargs["headers"]["x-acgw-identity"], "identity")
         self.assertEqual(case_call.kwargs["json"], {"data": [{
             "r8p0_title": "案例一", "r8p0_source": "法院", "r8p0_link": "https://example.com/case",
-            "r8p0_date": "2026-08-01", "r8p0_file_date": "2026-09-09",
+            "r8p0_date": "2026-08-01", "r8p0_file_date": "2026-09-09 00:00:00",
             "r8p0_sync_kb": "是", "r8p0_summary": "案例摘要",
         }]})
         self.assertEqual(case_call.kwargs["timeout"], 60)
@@ -182,7 +182,7 @@ class KingdeeCaseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_case_payload([record])
         payload = build_case_payload([record], "2026-09-10", "否")["data"][0]
-        self.assertEqual(payload["r8p0_file_date"], "2026-09-10")
+        self.assertEqual(payload["r8p0_file_date"], "2026-09-10 00:00:00")
         self.assertEqual(payload["r8p0_sync_kb"], "否")
         self.assertEqual(payload["r8p0_summary"], "")
         with self.assertRaises(ValueError):
@@ -194,11 +194,11 @@ class KingdeeCaseTests(unittest.TestCase):
         crawler.results = crawler.case_results = [self.item]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            crawler.save_core_outputs(root / "law.txt", root / "case.txt", "2026-09-09")
             for suffix in ("txt", "csv"):
+                crawler.save_core_outputs(root / "law.txt", root / f"case.{suffix}", "2026-09-09")
                 payload = build_case_payload(read_cases(root / f"case.{suffix}"))
                 self.assertEqual(payload["data"][0]["r8p0_title"], self.item["title"])
-                self.assertEqual(payload["data"][0]["r8p0_file_date"], "2026-09-09")
+                self.assertEqual(payload["data"][0]["r8p0_file_date"], "2026-09-09 00:00:00")
 
     def test_filter_only_pushes_cases_after_files_saved(self):
         crawler = LawCrawler(days=30)
@@ -217,7 +217,7 @@ class KingdeeCaseTests(unittest.TestCase):
 
             def send(items, generated, sync_kb):
                 self.assertEqual(items, [case])
-                self.assertEqual(generated, "2026-09-10")
+                self.assertEqual(generated, "2026-09-10 00:00:00")
                 self.assertTrue((root / "case.csv").exists())
                 self.assertTrue((root / "law.txt").exists())
                 raise KingdeeError("push failed")
@@ -225,10 +225,10 @@ class KingdeeCaseTests(unittest.TestCase):
             client.send_cases.side_effect = send
             with patch("run_filter.LawCrawler", return_value=crawler), \
                  patch("run_filter.LAW_OUTPUT_FILE", root / "law.txt"), \
-                 patch("run_filter.CASE_OUTPUT_FILE", root / "case.txt"):
+                 patch("run_filter.CASE_OUTPUT_FILE", root / "case.csv"):
                 with self.assertRaises(KingdeeError):
                     run(30, agent, file_date=date(2026, 9, 10), case_client=client)
-            self.assertTrue((root / "case.txt").exists())
+            self.assertFalse((root / "case.txt").exists())
             self.assertTrue((root / "case.csv").exists())
 
     def test_config_environment_overrides_local_file(self):

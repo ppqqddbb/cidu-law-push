@@ -22,6 +22,8 @@ from datetime import date, datetime, timedelta
 from typing import Iterable
 
 import requests
+from case_database import import_csv
+from sync_cases_kb import synchronize
 from file_dates import format_file_date
 
 from config import (
@@ -206,7 +208,9 @@ def unique_in_range(
 
 def run(days: int, agent: DifyAgent, keep_on_error: bool = False,
         file_date: str | date | None = None, case_client: KingdeeCaseClient | None = None,
-        sync_kb: str | None = None) -> tuple[int, int, int]:
+        sync_kb: str | None = None, import_database: bool = True,
+        database_config: str | None = None,
+        sync_knowledge_base: bool = True) -> tuple[int, int, int]:
     if days < 1:
         raise ValueError("days must be at least 1")
     end_date = date.today()
@@ -253,6 +257,24 @@ def run(days: int, agent: DifyAgent, keep_on_error: bool = False,
     if case_client is not None:
         count = case_client.send_cases(case_items, generated_date, sync_kb)
         logger.info("Kingdee case push succeeded: %d records", count)
+    elif import_database:
+        try:
+            outcome = import_csv(CASE_OUTPUT_FILE, database_config)
+        except Exception as exc:
+            raise RuntimeError(f"case.csv database import failed: {exc}") from exc
+        logger.info("database import succeeded: inserted=%d, skipped=%d",
+                    outcome["inserted"], outcome["skipped"])
+    if sync_knowledge_base and (import_database or case_client is not None):
+        try:
+            outcome = synchronize(database_config)
+            if outcome["failed"]:
+                raise RuntimeError(f"{outcome['failed']} cases failed to synchronize")
+        except Exception as exc:
+            raise RuntimeError(
+                "database import completed, but knowledge base sync failed; "
+                "retry with: python sync_cases_kb.py "
+                "(use the same --database-config if specified)"
+            ) from exc
     return len(law_items), len(case_items), other_count
 
 
@@ -264,10 +286,15 @@ def main() -> int:
     parser.add_argument("--keep-on-error", action="store_true", help="keep an item if Dify classification fails")
     parser.add_argument("--file-date", type=format_file_date, metavar="YYYY-MM-DD HH:MM:SS",
                         help="output file date (default: local date when saving)")
-    parser.add_argument("--push-case", action="store_true", help="push filtered cases to Kingdee after saving")
+    parser.add_argument("--push-case", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--no-push-case", action="store_true",
+                        help="save case.csv without database import or knowledge base sync")
+    parser.add_argument("--no-sync-kb", action="store_true",
+                        help="import case.csv into the database without knowledge base sync")
     parser.add_argument("--kingdee-config", help="Kingdee JSON config file")
     parser.add_argument("--kingdee-timeout", type=int, default=60)
-    parser.add_argument("--sync-kb", help="value for r8p0_sync_kb")
+    parser.add_argument("--sync-kb", help="legacy Kingdee HTTP push field r8p0_sync_kb")
+    parser.add_argument("--database-config", help="database JSON config (default: kb_sync.local.json)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -278,9 +305,11 @@ def main() -> int:
         return 1
     try:
         case_client = (KingdeeCaseClient(load_config(args.kingdee_config), args.kingdee_timeout)
-                       if args.push_case else None)
+                       if args.push_case and not args.no_push_case else None)
         run(args.days, DifyAgent(api_url, api_key, args.timeout, args.retries),
-            args.keep_on_error, args.file_date, case_client, args.sync_kb)
+            args.keep_on_error, args.file_date, case_client, args.sync_kb,
+            import_database=not args.no_push_case, database_config=args.database_config,
+            sync_knowledge_base=not args.no_sync_kb)
     except Exception:
         logger.exception("filtered crawl failed")
         return 1

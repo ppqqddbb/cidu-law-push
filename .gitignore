@@ -57,6 +57,7 @@ dist-ssr/
 .test-tmp/
 test_*.py
 !tests/test_filter_outputs.py
+!tests/test_case_database.py
 !tests/test_kingdee_case.py
 test_*.html
 test_*.log
