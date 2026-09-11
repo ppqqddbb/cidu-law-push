@@ -2,7 +2,7 @@
 set -eu
 
 # Install an idempotent cron entry for the filtered legal crawl.
-PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 PYTHON_BIN="${PYTHON_EXECUTABLE:-}"
 if [ -z "$PYTHON_BIN" ]; then
     PYTHON_BIN="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
@@ -12,7 +12,7 @@ if [ -z "$PYTHON_BIN" ] || [ ! -x "$PYTHON_BIN" ]; then
     exit 1
 fi
 
-LOG_DIR="$PROJECT_ROOT/.run"
+LOG_DIR="$PROJECT_ROOT/logs"
 LOG_FILE="$LOG_DIR/law_filter_schedule.log"
 mkdir -p "$LOG_DIR"
 

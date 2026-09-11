@@ -7,8 +7,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from law_crawler import LawCrawler, SSLAdapter
-from run_filter import DifyError, run
+from law_push.crawler import LawCrawler, SSLAdapter
+from law_push.pipeline import DifyError, run
 
 
 class FilterOutputTests(unittest.TestCase):
@@ -43,9 +43,9 @@ class FilterOutputTests(unittest.TestCase):
         agent.classify.side_effect = ["law", "case", "other"]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with patch("run_filter.RESULT_OUTPUT_FILE", root / "result.txt"), \
-                 patch("run_filter.LAW_OUTPUT_FILE", root / "law.txt"), \
-                 patch("run_filter.CASE_OUTPUT_FILE", root / "case.csv"), \
+            with patch("law_push.pipeline.RESULT_OUTPUT_FILE", root / "result.txt"), \
+                 patch("law_push.pipeline.LAW_OUTPUT_FILE", root / "law.txt"), \
+                 patch("law_push.pipeline.CASE_OUTPUT_FILE", root / "case.csv"), \
                  patch.object(LawCrawler, "crawl_all", crawl):
                 self.assertEqual(run(30, agent, file_date=date(2026, 1, 2), import_database=False), (1, 1, 1))
             headers = ["\u6807\u9898", "\u6765\u6e90", "\u65e5\u671f", "\u94fe\u63a5", "\u6587\u4ef6\u65e5\u671f"]
@@ -85,7 +85,7 @@ class FilterOutputTests(unittest.TestCase):
         crawler.save_core_outputs = Mock()
         agent = Mock()
         agent.classify.side_effect = DifyError("unavailable")
-        with patch("run_filter.LawCrawler", return_value=crawler):
+        with patch("law_push.pipeline.LawCrawler", return_value=crawler):
             with self.assertRaises(DifyError):
                 run(30, agent)
         crawler.save_core_outputs.assert_not_called()

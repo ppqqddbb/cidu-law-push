@@ -1,7 +1,8 @@
 param(
     [string]$TaskName = "Law-Push-Filtered-Daily",
     [string]$PythonExecutable = "python",
-    [string]$RunAt = "08:30"
+    [string]$RunAt = "08:30",
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,7 +13,7 @@ try {
     throw "RunAt must use HH:mm format, for example 08:00."
 }
 
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot ".")).Path
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $jobScript = Join-Path $projectRoot "run_filter.py"
 if (-not (Test-Path -LiteralPath $jobScript -PathType Leaf)) {
     throw "Cannot find run_filter.py under $projectRoot."
@@ -27,11 +28,17 @@ if (-not $pythonPath) {
     throw "Could not resolve a real Python executable for '$PythonExecutable'."
 }
 
-$logDir = Join-Path $projectRoot ".run"
+$logDir = Join-Path $projectRoot "logs"
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $logFile = Join-Path $logDir "law_filter_schedule.log"
 
 $commandLine = '"{0}" -u "{1}" 30 >> "{2}" 2>&1' -f $pythonPath, $jobScript, $logFile
+if ($DryRun) {
+    Write-Host "Task: $TaskName at $RunAt"
+    Write-Host "Command: $commandLine"
+    Write-Host "Working directory: $projectRoot"
+    return
+}
 $action = New-ScheduledTaskAction `
     -Execute $env:ComSpec `
     -Argument ('/d /c "{0}"' -f $commandLine) `

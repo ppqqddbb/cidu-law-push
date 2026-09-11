@@ -9,10 +9,13 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
-from file_dates import format_file_date
+from .file_dates import format_file_date
 
 
-DEFAULT_CONFIG = Path(__file__).with_name("kingdee.local.json")
+from .paths import CONFIG_DIR
+
+
+DEFAULT_CONFIG = CONFIG_DIR / "kingdee.local.json"
 DEFAULT_CASE_URL = "http://127.0.0.1:8881/ierp/kapi/v2/r8p0/r8p0_law/r8p0_case/case"
 DEFAULT_TOKEN_URL = "http://127.0.0.1:8881/ierp/kapi/oauth2/getToken"
 

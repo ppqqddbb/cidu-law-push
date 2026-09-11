@@ -14,10 +14,11 @@ from psycopg import sql
 from psycopg.rows import dict_row
 import requests
 
-from case_database import load_config as load_database_config
+from .database import load_config as load_database_config
 
-ROOT = Path(__file__).resolve().parent
-CFG = ROOT / "kb_sync.local.json"
+from .paths import CONFIG_DIR
+
+CFG = CONFIG_DIR / "kb_sync.local.json"
 FIELDS = "fid, fk_r8p0_title, fk_r8p0_source, fk_r8p0_link, fk_r8p0_date, fk_r8p0_file_date, fk_r8p0_summary"
 logger = logging.getLogger(__name__)
 

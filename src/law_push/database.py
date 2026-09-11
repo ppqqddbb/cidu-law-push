@@ -16,7 +16,10 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 
-DEFAULT_CONFIG = Path(__file__).with_name("kb_sync.local.json")
+from .paths import CONFIG_DIR, OUTPUT_DIR
+
+
+DEFAULT_CONFIG = CONFIG_DIR / "kb_sync.local.json"
 REQUIRED_COLUMNS = {"标题", "来源", "日期", "链接", "文件日期"}
 
 
@@ -135,7 +138,7 @@ def import_csv(path: str | Path, config_path: str | Path | None = None) -> dict[
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="将已有案例 CSV 导入数据库（重复案例自动跳过）")
-    parser.add_argument("csv", type=Path)
+    parser.add_argument("csv", type=Path, nargs="?", default=OUTPUT_DIR / "case.csv")
     parser.add_argument("--database-config", help="数据库 JSON 配置路径")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")

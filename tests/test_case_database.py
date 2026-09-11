@@ -5,12 +5,12 @@ from unittest.mock import Mock
 
 import pytest
 
-import case_database
-import run_filter
+from law_push import database as case_database
+from law_push import pipeline as run_filter
 
 
 def test_config_uses_same_database_name_variable_as_api(tmp_path, monkeypatch):
-    path = tmp_path / 'config.json'
+    path = tmp_path / 'law_push.settings.json'
     path.write_text(json.dumps({'database': dict(host='localhost', port=5432,
         database='old', user='test', schema='public', table='cases')}))
     monkeypatch.setenv('CASE_DB_NAME', 'shared_cases')
@@ -88,7 +88,7 @@ def test_invalid_csv_never_connects(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize('fail', [False, True])
 def test_filter_automatically_imports_saved_csv_and_keeps_files_on_failure(tmp_path, monkeypatch, fail):
-    from law_crawler import LawCrawler
+    from law_push.crawler import LawCrawler
 
     crawler = LawCrawler(days=30)
     crawler.results = [dict(title='案例', date=date.today().isoformat(), url='https://example.com/case')]
@@ -130,7 +130,7 @@ def test_filter_automatically_imports_saved_csv_and_keeps_files_on_failure(tmp_p
 
 @pytest.mark.parametrize('sync_failure', [False, True])
 def test_sync_failure_preserves_database_import_and_csv(tmp_path, monkeypatch, sync_failure):
-    from law_crawler import LawCrawler
+    from law_push.crawler import LawCrawler
 
     crawler = LawCrawler(days=30)
     crawler.results = crawler.case_results = []
@@ -144,7 +144,7 @@ def test_sync_failure_preserves_database_import_and_csv(tmp_path, monkeypatch, s
     monkeypatch.setattr(run_filter, 'synchronize', synchronizer)
     try:
         if sync_failure:
-            with pytest.raises(RuntimeError, match='sync_cases_kb.py'):
+            with pytest.raises(RuntimeError, match='sync-kb'):
                 run_filter.run(30, Mock(), database_config='shared.json')
             synchronizer.assert_called_once_with('shared.json')
         else:
@@ -159,7 +159,7 @@ def test_sync_failure_preserves_database_import_and_csv(tmp_path, monkeypatch, s
 @pytest.mark.parametrize('flags, expected', [([], (True, True)),
     (['--no-sync-kb'], (True, False)), (['--no-push-case'], (False, True))])
 def test_command_defaults_and_opt_out_flags(monkeypatch, flags, expected):
-    monkeypatch.setattr('sys.argv', ['run_filter.py', '30', *flags])
+    monkeypatch.setattr('sys.argv', ['law_push.pipeline.py', '30', *flags])
     monkeypatch.setenv('DIFY_API_KEY', 'test-key')
     runner = Mock()
     monkeypatch.setattr(run_filter, 'run', runner)

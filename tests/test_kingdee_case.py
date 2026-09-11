@@ -8,11 +8,11 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from kingdee_case import (DEFAULT_CASE_URL, KingdeeCaseClient, KingdeeError,
+from law_push.kingdee import (DEFAULT_CASE_URL, KingdeeCaseClient, KingdeeError,
                          build_case_payload, load_config)
-from law_crawler import LawCrawler
-from push_case import read_cases
-from run_filter import run
+from law_push.crawler import LawCrawler
+from law_push.case_push import read_cases
+from law_push.pipeline import run
 
 
 class KingdeeCaseTests(unittest.TestCase):
@@ -33,7 +33,7 @@ class KingdeeCaseTests(unittest.TestCase):
             self.response({"status": True, "data": {"access_token": "token"}}),
             self.response({"status": True, "data": {}}),
         ]
-        with patch("kingdee_case.requests.Session") as factory:
+        with patch("law_push.kingdee.requests.Session") as factory:
             factory.return_value.__enter__.return_value = session
             self.assertEqual(KingdeeCaseClient(self.config).send_cases([self.item]), 1)
         token_call, case_call = session.post.call_args_list
@@ -61,7 +61,7 @@ class KingdeeCaseTests(unittest.TestCase):
                                      "result": [{"billStatus": True, "errors": []}]},
                            "errorCode": "0", "message": None, "status": True}),
         ]
-        with patch("kingdee_case.requests.Session") as factory:
+        with patch("law_push.kingdee.requests.Session") as factory:
             factory.return_value.__enter__.return_value = session
             self.assertEqual(KingdeeCaseClient(self.config).send_cases([self.item]), 1)
 
@@ -72,7 +72,7 @@ class KingdeeCaseTests(unittest.TestCase):
             self.response({"status": True, "errorCode": "0",
                            "data": {"result": [{"errors": ["invalid title"]}]}}),
         ]
-        with patch("kingdee_case.requests.Session") as factory:
+        with patch("law_push.kingdee.requests.Session") as factory:
             factory.return_value.__enter__.return_value = session
             with self.assertRaises(KingdeeError) as caught:
                 KingdeeCaseClient(self.config).send_cases([self.item])
@@ -127,7 +127,7 @@ class KingdeeCaseTests(unittest.TestCase):
             self.assertNotIn("=secret", str(caught.exception))
 
     def test_empty_batch_skips_authentication(self):
-        with patch("kingdee_case.requests.Session") as session:
+        with patch("law_push.kingdee.requests.Session") as session:
             self.assertEqual(KingdeeCaseClient({}).send_cases([]), 0)
             session.assert_not_called()
 
@@ -135,7 +135,7 @@ class KingdeeCaseTests(unittest.TestCase):
         config = dict(self.config, token_url="http://127.0.0.1:8881/ierp/kapi/oauth2/getToken",
                       client_id="case", username="local-user", account_id="local-account")
         config.pop("identity")
-        with patch("kingdee_case.requests.Session") as factory:
+        with patch("law_push.kingdee.requests.Session") as factory:
             session = factory.return_value.__enter__.return_value
             session.post.side_effect = [
                 self.response({"status": True, "data": {"access_token": "local-token"}}),
@@ -153,7 +153,7 @@ class KingdeeCaseTests(unittest.TestCase):
 
     def test_authentication_failure_does_not_send_cases(self):
         for result in ({"status": False}, {"status": True, "data": {}}, []):
-            with self.subTest(result=result), patch("kingdee_case.requests.Session") as factory:
+            with self.subTest(result=result), patch("law_push.kingdee.requests.Session") as factory:
                 session = factory.return_value.__enter__.return_value
                 session.post.return_value = self.response(result)
                 with self.assertRaises(KingdeeError):
@@ -166,7 +166,7 @@ class KingdeeCaseTests(unittest.TestCase):
         for failure in (self.response({}, 500), self.response({"status": False}),
                         self.response({"status": True, "data": {"success": False}}),
                         invalid_json, requests.Timeout("secret-token")):
-            with self.subTest(failure=failure), patch("kingdee_case.requests.Session") as factory:
+            with self.subTest(failure=failure), patch("law_push.kingdee.requests.Session") as factory:
                 session = factory.return_value.__enter__.return_value
                 session.post.side_effect = [
                     self.response({"status": True, "data": {"access_token": "token"}}), failure]
@@ -223,9 +223,9 @@ class KingdeeCaseTests(unittest.TestCase):
                 raise KingdeeError("push failed")
 
             client.send_cases.side_effect = send
-            with patch("run_filter.LawCrawler", return_value=crawler), \
-                 patch("run_filter.LAW_OUTPUT_FILE", root / "law.txt"), \
-                 patch("run_filter.CASE_OUTPUT_FILE", root / "case.csv"):
+            with patch("law_push.pipeline.LawCrawler", return_value=crawler), \
+                 patch("law_push.pipeline.LAW_OUTPUT_FILE", root / "law.txt"), \
+                 patch("law_push.pipeline.CASE_OUTPUT_FILE", root / "case.csv"):
                 with self.assertRaises(KingdeeError):
                     run(30, agent, file_date=date(2026, 9, 10), case_client=client)
             self.assertFalse((root / "case.txt").exists())
@@ -233,7 +233,7 @@ class KingdeeCaseTests(unittest.TestCase):
 
     def test_config_environment_overrides_local_file(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "config.json"
+            path = Path(directory) / "law_push.settings.json"
             path.write_text(json.dumps(self.config), encoding="utf-8")
             with patch.dict("os.environ", {"KINGDEE_CASE_URL": "http://example.com/case"}, clear=True):
                 config = load_config(path)

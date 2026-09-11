@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import requests
-from file_dates import format_file_date
+from .file_dates import format_file_date
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 try:
@@ -23,7 +23,7 @@ try:
 except ImportError:
     create_urllib3_context = None
 
-from config import (
+from .settings import (
     HEADERS,
     TIMEOUT,
     DEFAULT_DAYS,
@@ -33,7 +33,6 @@ from config import (
     COURT_CASE_SOURCE,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -1259,22 +1258,9 @@ class LawCrawler:
         """将爬取记录按固定四字段格式写入文件。"""
         self._write_items_file(output_file, items, "")
 
-    def _write_items_file_legacy(self, output_file, items, heading):
-        """写入统一的标题、来源、日期、链接格式。"""
-        with open(output_file, "w", encoding="utf-8") as f:
-            if heading:
-                f.write(f"{heading}\n")
-                f.write(f"共 {len(items)} 条\n")
-                f.write("=" * 60 + "\n\n")
-            for item in sorted(items, key=lambda value: value.get("date", ""), reverse=True):
-                title = " ".join(item.get("title", "").split())
-                f.write(f"标题：{title}\n")
-                f.write(f"来源：{item.get('source', '')}\n")
-                f.write(f"日期：{item.get('date', '')}\n")
-                f.write(f"链接：{item.get('url', '')}\n\n")
-
     def _write_items_file(self, output_file, items, heading, file_date=None):
         """Keep raw snapshots unchanged; export dated results as TXT and CSV."""
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
         fields = [("标题", "title"), ("来源", "source"),
                   ("日期", "date"), ("链接", "url")]
         if file_date is not None:
@@ -1296,17 +1282,3 @@ class LawCrawler:
                     for (label, _), value in zip(fields, row):
                         f.write(f"{label}：{value}\n")
                     f.write("\n")
-
-def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="法律信息爬虫")
-    parser.add_argument("--days", type=int, default=DEFAULT_DAYS, help=f"时间范围（天），默认 {DEFAULT_DAYS}")
-    args = parser.parse_args()
-
-    crawler = LawCrawler(days=args.days)
-    crawler.crawl_all()
-    crawler.save_core_outputs()
-
-
-if __name__ == "__main__":
-    main()

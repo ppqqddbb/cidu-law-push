@@ -1,172 +1,54 @@
-# ============================================
-# Python
-# ============================================
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
+# Python environments, builds and caches
+.env/
 .venv/
 venv/
-ENV/
 env/
-dist/
-build/
+__pycache__/
+*.py[cod]
 *.egg-info/
-*.egg
+build/
+dist/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
 htmlcov/
-.tox/
-.mypy_cache/
-.ruff_cache/
-.uv-cache/
-
-# ============================================
-# Node.js / pnpm / npm / yarn
-# ============================================
-node_modules/
-.npm/
-.yarn/
-.pnpm-store/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
-# ============================================
-# 前端（Vite / React / Vue）
-# ============================================
-dist/
-dist-ssr/
-*.local
-.vite/
-.cache/
-.turbo/
-.next/
-.nuxt/
-.output/
-
-# ============================================
-# 测试文件
-# ============================================
 .test-tmp/
-test_*.py
-!tests/test_filter_outputs.py
-!tests/test_case_database.py
-!tests/test_kingdee_case.py
-test_*.html
-test_*.log
-test_*.js
-test_*.ts
-debug_*.py
-debug_*.html
-sogou_test_*.html
 
-# ============================================
-# 运行文件和日志
-# ============================================
+# Private configuration (templates remain version controlled)
+*.local.json
+.env
+.env.*
+!config/*.example.json
+*.pem
+*.key
+
+# Generated data and logs (directory placeholders remain version controlled)
+data/output/*
+!data/output/.gitkeep
+logs/*
+!logs/.gitkeep
 .run/
 *.log
-*.tmp
-*.temp
-run_*.py
-!run_filter.py
-run_*.ps1
-
-# ============================================
-# 数据文件（保留目录结构）
-# ============================================
-data/*.txt
-data/*.json
-*.csv
-*.xlsx
-*.db
 *.sqlite3
-result.txt
-*结果*.txt
-*案例*.txt
+*.db
 
-# ============================================
-# IDE / 编辑器
-# ============================================
-.vscode/
+# Old root outputs, for users upgrading an existing checkout
+/case.csv
+/law.txt
+/result.txt
+
+# Editor and operating-system files
 .idea/
+.vscode/
 *.swp
 *.swo
-*~
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# ============================================
-# 操作系统
-# ============================================
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# ============================================
-# Docker
-# ============================================
-*.tar
-*.tar.gz
-*.img
-.dockerignore
-
-# ============================================
-# 环境变量 / 敏感配置
-# ============================================
-.env
-kingdee.local.json
-kb_sync.local.json
-!tests/test_kb_sync.py
-.env.local
-.env.production
-.env.development
-.env.test
-*.pem
-*.key
-*.crt
-
-# ============================================
-# 项目特定
-# ============================================
-# 文档（保留 README 主文件）
-*说明*.md
-*指南*.md
-*方案*.md
-*报告*.md
-*问题*.md
-改进说明.md
-最终问题报告.md
-Selenium使用指南.md
-README_使用说明.md
-
-# Selenium / 浏览器驱动
-*.exe
-chromedriver*
-geckodriver*
-selenium_sogou.py
-sogou_parser.py
-excel_sources.py
-requirements_selenium.txt
-
-# 脚本输出
-scripts/*.json
-scripts/excel_content.json
-*.html
-
-# 临时文件
+# Local tooling
+.uv-cache/
 .tmp/
-temp/
 tmp/
-_debug_previews/
+temp/

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 import requests
 
-import sync_cases_kb as kb
+from law_push import knowledge_base as kb
 
 
 class CaseDatabase:

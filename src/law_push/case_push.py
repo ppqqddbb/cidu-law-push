@@ -3,11 +3,11 @@
 import argparse
 import csv
 import logging
-from file_dates import format_file_date
+from .file_dates import format_file_date
 from pathlib import Path
 
-from config import CASE_OUTPUT_FILE
-from kingdee_case import KingdeeCaseClient, load_config
+from .settings import CASE_OUTPUT_FILE
+from .kingdee import KingdeeCaseClient, load_config
 
 
 FIELDS = {"标题": "title", "来源": "source", "日期": "date", "链接": "url",
@@ -42,7 +42,7 @@ def read_cases(path):
     return items
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Push case.txt/case.csv to Kingdee")
     parser.add_argument("input", nargs="?", default=CASE_OUTPUT_FILE)
     parser.add_argument("--config", help="Kingdee JSON config file")
@@ -50,7 +50,7 @@ def main():
                         help="override file date; required for older four-field files")
     parser.add_argument("--sync-kb", help="value for r8p0_sync_kb")
     parser.add_argument("--timeout", type=int, default=60)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     try:
         client = KingdeeCaseClient(load_config(args.config), timeout=args.timeout)

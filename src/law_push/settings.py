@@ -2,7 +2,10 @@
 """爬虫配置文件"""
 
 import os
-from datetime import datetime
+import json
+from pathlib import Path
+
+from .paths import CONFIG_DIR, OUTPUT_DIR
 
 # 请求头
 HEADERS = {
@@ -19,17 +22,27 @@ TIMEOUT = 15
 # 默认时间范围（天）
 DEFAULT_DAYS = 7
 
-# 输出文件路径
-OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
-# result.txt stores the complete crawl before Dify filtering.
-RESULT_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "result.txt")
-LAW_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "law.txt")
-CASE_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "case.csv")
+# Paths do not depend on the shell working directory.
+RESULT_OUTPUT_FILE = OUTPUT_DIR / "result.txt"
+LAW_OUTPUT_FILE = OUTPUT_DIR / "law.txt"
+CASE_OUTPUT_FILE = OUTPUT_DIR / "case.csv"
 
-# Dify agent connection settings. Environment variables can override these
-# values when run_filter.py is started.
-DIFY_API_URL = "http://ciduai.daneng.cc/v1"
-DIFY_API_KEY = "app-9vafjQOyvM8j25Y4u43P8lLx"
+
+def load_app_config():
+    path = Path(os.getenv("LAW_PUSH_APP_CONFIG", CONFIG_DIR / "app.local.json"))
+    if not path.exists():
+        if os.getenv("LAW_PUSH_APP_CONFIG"):
+            raise ValueError(f"Application configuration not found: {path}")
+        return {}
+    config = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(config, dict) or not isinstance(config.get("dify", {}), dict):
+        raise ValueError("Application configuration must contain a dify object")
+    return config
+
+
+_app = load_app_config().get("dify", {})
+DIFY_API_URL = os.getenv("DIFY_API_URL", _app.get("base_url", "http://ciduai.daneng.cc/v1"))
+DIFY_API_KEY = os.getenv("DIFY_API_KEY", _app.get("api_key", ""))
 
 # 各网站配置
 SITES = {
