@@ -48,6 +48,7 @@ def setup_sync(monkeypatch, count):
     monkeypatch.setattr(kb, 'load', Mock(return_value=config))
     session = MagicMock()
     session.__enter__.return_value = session
+    session.get.return_value.json.return_value = {'data': [], 'has_more': False}
     session.post.return_value.json.return_value = {'document': {'id': 'doc-id'}}
     factory = Mock(return_value=session)
     monkeypatch.setattr(kb.requests, 'Session', factory)
@@ -126,3 +127,33 @@ def test_sync_uses_same_config_and_environment_as_importer(tmp_path, monkeypatch
 def test_cli_returns_failure_for_partial_failure(monkeypatch):
     monkeypatch.setattr(kb, 'synchronize', Mock(return_value={'failed': 1}))
     assert kb.main([]) == 1
+
+
+def test_disable_old_documents_is_called_by_default(monkeypatch):
+    database, session, _ = setup_sync(monkeypatch, 2)
+    # Mock documents to disable
+    session.get.return_value.json.return_value = {
+        'data': [
+            {'id': 'doc-1', 'enabled': True},
+            {'id': 'doc-2', 'enabled': True}
+        ],
+        'has_more': False
+    }
+    session.post.return_value.json.return_value = {'document': {'id': 'doc-id'}}
+
+    result = kb.synchronize()
+    assert result['synced'] == 2
+    # Should have disabled 2 docs + created 2 docs = 4 POST calls
+    assert session.post.call_count == 4
+
+
+def test_disable_old_can_be_skipped(monkeypatch):
+    database, session, _ = setup_sync(monkeypatch, 2)
+    session.get.return_value.json.return_value = {'data': [], 'has_more': False}
+    session.post.return_value.json.return_value = {'document': {'id': 'doc-id'}}
+
+    result = kb.synchronize(disable_old=False)
+    assert result['synced'] == 2
+    # Should only have created 2 docs, no disable calls
+    assert session.post.call_count == 2
+

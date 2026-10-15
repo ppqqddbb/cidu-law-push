@@ -65,10 +65,12 @@ Law-Push/
 | 仅生成文件 | `python .\run_filter.py crawl 30 --no-push-case` |
 | 补导入默认 CSV | `python .\run_filter.py import-cases` |
 | 导入指定 CSV | `python .\run_filter.py import-cases .\data\output\case.csv` |
-| 补同步知识库 | `python .\run_filter.py sync-kb` |
+| 补同步知识库（禁用旧文档） | `python .\run_filter.py sync-kb` |
+| 补同步知识库（保留旧文档） | `python .\run_filter.py sync-kb --no-disable-old` |
 | 查询待同步数量，不写入 | `python .\run_filter.py sync-kb --dry-run` |
 | 旧金蝶 HTTP 推送 | `python .\run_filter.py push-kingdee .\data\output\case.csv` |
 | 配置检查 | `python .\run_filter.py check-config` |
+| 验证知识库配置 | `python scripts\verify_kb_config.py` |
 | 查看某个命令的参数 | `python .\run_filter.py crawl --help` |
 
 正常使用完整流程即可，无需另外执行入库和同步命令。补导入仅负责入库，之后可以单独执行 `sync-kb`。
@@ -96,6 +98,57 @@ python -m law_push check-config
 发布日与文件生成时间分别保留；`--file-date "2026-09-09 17:30:45"` 可指定文件日期。
 相同标题和链接的案例重复入库会跳过。知识库提交失败保留待同步状态，命令返回非零退出码。
 Dify 接收文档后异步建立索引；提交成功不代表索引已完成。
+
+## 知识库同步
+
+知识库同步功能会将数据库中标记为"是否同步到知识库=是"的案例提交到 Dify 知识库。
+
+### 同步行为
+
+默认情况下，`sync-kb` 命令会：
+1. **禁用旧文档**：禁用"法律案例知识库"（ID: `28522cdc-67e0-414d-83b1-fada32f48958`）中的所有旧文档
+2. **提交新案例**：将待同步案例提交到知识库
+3. **更新状态**：将成功提交的案例标记为"是否同步到知识库=否"
+
+### 配置要求
+
+在 `config/kb_sync.local.json` 中需要配置：
+
+```json
+{
+  "dify": {
+    "base_url": "http://ciduai.daneng.cc/v1",
+    "api_key": "your-api-key",
+    "dataset_name": "法律案例知识库",
+    "dataset_id": "28522cdc-67e0-414d-83b1-fada32f48958"
+  }
+}
+```
+
+- `dataset_id`：**必需**，确保只操作指定的知识库
+- `dataset_name`：知识库名称，当未指定 `dataset_id` 时用于查找
+
+### 高级选项
+
+```powershell
+# 跳过禁用旧文档，只提交新案例
+python .\run_filter.py sync-kb --no-disable-old
+
+# 限制本次同步的案例数量
+python .\run_filter.py sync-kb --limit 100
+
+# 验证配置是否正确
+python scripts\verify_kb_config.py
+```
+
+### 注意事项
+
+- **精确定位**：禁用操作只影响配置中指定的知识库，不影响其他知识库
+- **失败重试**：提交失败的案例保持待同步状态，下次运行时会重试
+- **权限要求**：确保 API key 有禁用文档的权限
+- **性能影响**：如果知识库有大量文档，禁用过程可能需要一些时间
+
+详细说明请参考：[知识库同步改进说明](docs/kb_sync_improvements.md)、[变更日志](CHANGES.md)
 
 ## 验证与运维
 

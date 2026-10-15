@@ -3,7 +3,7 @@
     "base_url": "http://ciduai.daneng.cc/v1",
     "api_key": "",
     "dataset_name": "法律案例知识库",
-    "dataset_id": ""
+    "dataset_id": "28522cdc-67e0-414d-83b1-fada32f48958"
   },
   "database": {
     "driver": "postgresql",
@@ -15,5 +15,6 @@
     "schema": "public",
     "table": ""
   },
-  "state_file": "kb_sync_state.sqlite3"
+  "state_file": "kb_sync_state.sqlite3",
+  "_comment": "dataset_id 指定了同步的目标知识库，确保只操作该知识库的文档"
 }

@@ -71,12 +71,56 @@ def resolve_dataset(session: requests.Session, dify: dict[str, Any]) -> str:
     return str(matches[0])
 
 
+def disable_old_documents(session: requests.Session, dify: dict[str, Any], dataset_id: str) -> int:
+    """Disable all documents in the specified dataset before syncing new ones.
+
+    Returns the count of disabled documents.
+    """
+    disabled_count = 0
+    page = 1
+    base_url = dify["base_url"].rstrip("/")
+
+    while True:
+        # List documents in the dataset
+        list_url = f"{base_url}/datasets/{dataset_id}/documents"
+        response = session.get(list_url, params={"page": page, "limit": 100}, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+
+        documents = payload.get("data", [])
+        for doc in documents:
+            doc_id = doc.get("id")
+            if doc_id and doc.get("enabled", True):
+                # Disable the document
+                update_url = f"{base_url}/datasets/{dataset_id}/documents/{doc_id}/status"
+                try:
+                    update_response = session.post(
+                        update_url,
+                        json={"enabled": False},
+                        timeout=30
+                    )
+                    update_response.raise_for_status()
+                    disabled_count += 1
+                    logger.info("已禁用知识库文档: %s", doc_id)
+                except requests.RequestException as exc:
+                    logger.warning("禁用文档 %s 失败: %s", doc_id, exc)
+
+        if not payload.get("has_more"):
+            break
+        page += 1
+
+    return disabled_count
+
+
 def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
-                limit: int | None = None) -> dict[str, int]:
+                limit: int | None = None, disable_old: bool = True) -> dict[str, int]:
     """Submit pending cases in batches and acknowledge each accepted document.
 
     Dify indexes accepted documents asynchronously. Accepted submissions are
     recorded as 否; rejected submissions stay 是 for the next invocation.
+
+    If disable_old is True, disables all existing documents in the target dataset
+    before syncing new ones.
     """
     if limit is not None and limit < 1:
         raise ValueError("limit 必须大于 0")
@@ -102,6 +146,15 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
             session.headers.update({"Authorization": "Bearer " + dify["api_key"],
                                     "Content-Type": "application/json"})
             dataset = resolve_dataset(session, dify)
+
+            # Disable old documents in this specific dataset only
+            if disable_old:
+                try:
+                    disabled = disable_old_documents(session, dify, dataset)
+                    logger.info("已禁用 %d 个旧文档（知识库 ID: %s）", disabled, dataset)
+                except Exception as exc:
+                    logger.warning("禁用旧文档时出错: %s", exc)
+
             endpoint = f"{dify['base_url'].rstrip('/')}/datasets/{dataset}/document/create-by-text"
             last_id = None
             attempted = 0
@@ -156,10 +209,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="只查询待同步数量")
     parser.add_argument("--limit", type=int, help="本次处理上限（默认处理全部待同步案例）")
     parser.add_argument("--database-config", help="包含 database 和 dify 的 JSON 配置路径")
+    parser.add_argument("--no-disable-old", action="store_true",
+                        help="同步前不禁用知识库中的旧文档")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     try:
-        outcome = synchronize(args.database_config, dry_run=args.dry_run, limit=args.limit)
+        outcome = synchronize(args.database_config, dry_run=args.dry_run, limit=args.limit,
+                            disable_old=not args.no_disable_old)
     except Exception as exc:
         logger.error("知识库同步失败：%s", exc)
         return 1
