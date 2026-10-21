@@ -1,0 +1,10 @@
+{
+  "token_url": "http://127.0.0.1:8881/ierp/kapi/oauth2/getToken",
+  "case_url": "http://127.0.0.1:8881/ierp/kapi/v2/r8p0/r8p0_law/r8p0_case/case",
+  "client_id": "",
+  "client_secret": "",
+  "username": "",
+  "account_id": "",
+  "identity": "",
+  "sync_kb": "是"
+}
