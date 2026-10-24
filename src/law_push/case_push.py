@@ -49,6 +49,7 @@ def main(argv=None):
     parser.add_argument("--file-date", type=format_file_date, metavar="YYYY-MM-DD HH:MM:SS",
                         help="override file date; required for older four-field files")
     parser.add_argument("--sync-kb", help="value for r8p0_sync_kb")
+    parser.add_argument("--wecom-push", help="value for r8p0_wecom_push (default: 否)")
     parser.add_argument("--timeout", type=int, default=60)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -56,7 +57,8 @@ def main(argv=None):
         client = KingdeeCaseClient(load_config(args.config), timeout=args.timeout)
         count = client.send_cases(read_cases(args.input),
                                   args.file_date,
-                                  args.sync_kb)
+                                  args.sync_kb,
+                                  args.wecom_push)
         logging.info("Kingdee case push succeeded: %d records", count)
     except (OSError, ValueError, RuntimeError) as exc:
         logging.error("Kingdee case push failed: %s", exc)

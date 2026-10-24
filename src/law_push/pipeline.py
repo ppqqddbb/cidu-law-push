@@ -73,7 +73,8 @@ def unique_in_range(
 
 def run(days: int, agent: DifyAgent, keep_on_error: bool = False,
         file_date: str | date | None = None, case_client: KingdeeCaseClient | None = None,
-        sync_kb: str | None = None, import_database: bool = True,
+        sync_kb: str | None = None, wecom_push: str | None = None,
+        import_database: bool = True,
         database_config: str | None = None,
         sync_knowledge_base: bool = True) -> tuple[int, int, int]:
     if days < 1:
@@ -120,7 +121,7 @@ def run(days: int, agent: DifyAgent, keep_on_error: bool = False,
     crawler.save_core_outputs(LAW_OUTPUT_FILE, CASE_OUTPUT_FILE, file_date=generated_date)
     logger.info("saved law=%d, case=%d, other=%d", len(law_items), len(case_items), other_count)
     if case_client is not None:
-        count = case_client.send_cases(case_items, generated_date, sync_kb)
+        count = case_client.send_cases(case_items, generated_date, sync_kb, wecom_push)
         logger.info("Kingdee case push succeeded: %d records", count)
     elif import_database:
         try:
@@ -159,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--kingdee-config", help="Kingdee JSON config file")
     parser.add_argument("--kingdee-timeout", type=int, default=60)
     parser.add_argument("--sync-kb", help="legacy Kingdee HTTP push field r8p0_sync_kb")
+    parser.add_argument("--wecom-push", choices=["是", "否"], default="否",
+                        help="旧金蝶推送字段 r8p0_wecom_push（默认否）")
     parser.add_argument("--database-config", help="database JSON config (default: config/kb_sync.local.json)")
     args = parser.parse_args(argv)
 
@@ -173,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
                        if args.push_case and not args.no_push_case else None)
         run(args.days, DifyAgent(api_url, api_key, args.timeout, args.retries),
             args.keep_on_error, args.file_date, case_client, args.sync_kb,
-            import_database=not args.no_push_case, database_config=args.database_config,
+            args.wecom_push, import_database=not args.no_push_case, database_config=args.database_config,
             sync_knowledge_base=not args.no_sync_kb)
     except Exception:
         logger.exception("filtered crawl failed")

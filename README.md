@@ -73,6 +73,7 @@ Law-Push/
 | 补同步知识库（保留旧文档） | `python .\run_filter.py sync-kb --no-disable-old` |
 | 查询待同步数量，不写入 | `python .\run_filter.py sync-kb --dry-run` |
 | 旧金蝶 HTTP 推送 | `python .\run_filter.py push-kingdee .\data\output\case.csv` |
+| 旧金蝶推送并启用企微推送 | `python .\run_filter.py push-kingdee .\data\output\case.csv --wecom-push 是` |
 | 配置检查 | `python .\run_filter.py check-config` |
 | 验证知识库配置 | `python scripts\verify_kb_config.py` |
 | 查看某个命令的参数 | `python .\run_filter.py crawl --help` |

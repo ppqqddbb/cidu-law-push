@@ -32,7 +32,7 @@ def load_config(path=None):
         if not isinstance(config, dict):
             raise ValueError("Kingdee config must be a JSON object")
     for key in ("token_url", "case_url", "client_id", "client_secret", "username",
-                "account_id", "identity", "sync_kb"):
+                "account_id", "identity", "sync_kb", "wecom_push"):
         value = os.getenv("KINGDEE_" + key.upper())
         if value is not None:
             config[key] = value
@@ -41,8 +41,8 @@ def load_config(path=None):
     return config
 
 
-def build_case_payload(items, file_date=None, sync_kb="否"):
-    """Map records to the seven fields accepted by the case API."""
+def build_case_payload(items, file_date=None, sync_kb="否", wecom_push="否"):
+    """Map records to the fields accepted by the case API."""
     rows = []
     for item in items:
         published = str(item.get("date") or "").strip()
@@ -64,6 +64,7 @@ def build_case_payload(items, file_date=None, sync_kb="否"):
             "r8p0_date": published,
             "r8p0_file_date": generated,
             "r8p0_sync_kb": sync_kb,
+            "r8p0_wecom_push": wecom_push,
             "r8p0_summary": str(item.get("summary") or ""),
         })
     return {"data": rows}
@@ -164,9 +165,11 @@ class KingdeeCaseClient:
                         raise KingdeeError(f"{operation}: batch not fully accepted; {detail}")
         return result
 
-    def send_cases(self, items, file_date=None, sync_kb=None):
-        payload = build_case_payload(items, file_date,
-                                     self.config.get("sync_kb", "否") if sync_kb is None else sync_kb)
+    def send_cases(self, items, file_date=None, sync_kb=None, wecom_push=None):
+        payload = build_case_payload(
+            items, file_date,
+            self.config.get("sync_kb", "否") if sync_kb is None else sync_kb,
+            self.config.get("wecom_push", "否") if wecom_push is None else wecom_push)
         if not payload["data"]:
             return 0
         required = ("client_id", "client_secret", "username", "account_id")
