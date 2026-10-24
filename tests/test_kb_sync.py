@@ -23,13 +23,15 @@ class CaseDatabase:
             cursor.fetchone.return_value = {'count': len(self.pending), 'max_id': max(self.pending, default=None)}
         elif 'FOR UPDATE' in query:
             fid = params[0]
+            assert params[1] == '是'
             cursor.fetchone.return_value = dict(fid=fid, fk_r8p0_title='案例', fk_r8p0_summary='第一行\n第二行')
         elif query.startswith('SELECT fid FROM'):
+            assert params[0] == '否'
             after = params[2] if len(params) == 4 else 0
             cursor.fetchall.return_value = [{'fid': fid} for fid in sorted(self.pending)
                                            if after < fid <= params[1]][:params[-1]]
         elif query.startswith('UPDATE'):
-            assert params[0] == '否'
+            assert params[0] == '是'
             self.pending.remove(params[1])
             self.updated.append(params[1])
         else:
@@ -127,6 +129,15 @@ def test_sync_uses_same_config_and_environment_as_importer(tmp_path, monkeypatch
 def test_cli_returns_failure_for_partial_failure(monkeypatch):
     monkeypatch.setattr(kb, 'synchronize', Mock(return_value={'failed': 1}))
     assert kb.main([]) == 1
+
+
+def test_mark_synced_migrates_rows_without_contacting_dify(monkeypatch):
+    monkeypatch.setattr(kb, 'mark_all_synced', Mock(return_value=7))
+    session = Mock()
+    monkeypatch.setattr(kb.requests, 'Session', session)
+    assert kb.main(['--mark-synced']) == 0
+    kb.mark_all_synced.assert_called_once_with(None)
+    session.assert_not_called()
 
 
 def test_disable_old_documents_is_called_by_default(monkeypatch):

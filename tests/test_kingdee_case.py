@@ -48,7 +48,7 @@ class KingdeeCaseTests(unittest.TestCase):
         self.assertEqual(case_call.kwargs["json"], {"data": [{
             "r8p0_title": "案例一", "r8p0_source": "法院", "r8p0_link": "https://example.com/case",
             "r8p0_date": "2026-08-01", "r8p0_file_date": "2026-09-09 00:00:00",
-            "r8p0_sync_kb": "是", "r8p0_summary": "案例摘要",
+            "r8p0_sync_kb": "否", "r8p0_summary": "案例摘要",
         }]})
         self.assertEqual(case_call.kwargs["timeout"], 60)
         self.assertFalse(case_call.kwargs["allow_redirects"])
@@ -181,9 +181,9 @@ class KingdeeCaseTests(unittest.TestCase):
         record.pop("summary")
         with self.assertRaises(ValueError):
             build_case_payload([record])
-        payload = build_case_payload([record], "2026-09-10", "否")["data"][0]
+        payload = build_case_payload([record], "2026-09-10", "是")["data"][0]
         self.assertEqual(payload["r8p0_file_date"], "2026-09-10 00:00:00")
-        self.assertEqual(payload["r8p0_sync_kb"], "否")
+        self.assertEqual(payload["r8p0_sync_kb"], "是")
         self.assertEqual(payload["r8p0_summary"], "")
         with self.assertRaises(ValueError):
             build_case_payload([record], "2026-02-30")

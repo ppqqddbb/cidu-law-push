@@ -24,7 +24,7 @@ python .\run_filter.py sync-kb --dry-run
 ```
 
 知识库每批读取最多 100 条，默认处理本次启动时的全部待同步记录；`--limit 100` 可限制本次处理量。
-成功提交后 `fk_r8p0_sync_kb` 从“是”更新为“否”，失败记录保留“是”。
+成功提交后 `fk_r8p0_sync_kb` 从“否”更新为“是”，失败记录保留“否”。
 Dify 接收后异步索引；请在知识库后台查看索引结果。
 若请求超时或远端接收后数据库提交失败，重试前核对 `case-<fid>` 文档，避免重复创建。
 
@@ -48,11 +48,17 @@ Dify 接收后异步索引；请在知识库后台查看索引结果。
 ## Linux / macOS
 
 ```bash
-conda activate py310
-PYTHON_EXECUTABLE="$(command -v python)" bash scripts/install_daily_filter.sh
+source .venv/bin/activate
+python3 setup_daily_task.py --time 13:45
 ```
 
-默认每天 08:00 执行。脚本按固定标记更新 cron 条目。
+默认每周六 20:30 执行；安装脚本会直接写入激活环境或项目 `.venv` 的 Python
+绝对路径，因此 cron 不需要 `source`。也可用 `--weekday all` 改为每天执行，
+或用 `--python /path/to/python` 显式指定。安装前会实际导入 `psycopg`、
+`requests`、`bs4` 做预检，依赖缺失会拒绝写入 cron。
+
+也可使用 `scripts/install_daily_filter.sh`，按固定标记更新 cron 条目（该脚本
+默认每天 08:00，可通过项目中的 crontab 条目调整）。
 
 ## 测试与打包
 

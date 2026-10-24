@@ -33,6 +33,7 @@ def test_repeated_csv_import_skips_existing_rows(tmp_path, monkeypatch):
     write_csv(path, [row, row])
     connection = MagicMock()
     stored = set()
+    inserts = []
 
     def execute(statement, params=None):
         query = statement.as_string()
@@ -43,6 +44,7 @@ def test_repeated_csv_import_skips_existing_rows(tmp_path, monkeypatch):
             cursor.fetchone.return_value = {'exists': 1} if params in stored else None
         elif 'INSERT INTO' in query:
             stored.add((params[1], params[3]))
+            inserts.append(query)
         return cursor
 
     connection.execute.side_effect = execute
@@ -51,6 +53,7 @@ def test_repeated_csv_import_skips_existing_rows(tmp_path, monkeypatch):
         host='localhost', port=5432, database='test', user='test', schema='public', table='cases')))
     assert case_database.import_csv(path) == {'inserted': 1, 'skipped': 1}
     assert case_database.import_csv(path) == {'inserted': 0, 'skipped': 2}
+    assert "'否'" in inserts[0]
 
 
 def test_csv_import_cli_reports_failure(monkeypatch):

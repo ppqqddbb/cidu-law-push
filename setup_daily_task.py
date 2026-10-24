@@ -2,9 +2,11 @@
 """
 Law-Push 定时任务设置工具
 用法：
-    python setup_daily_task.py                              # 默认每天 08:00 执行，爬取 30 天
+    python setup_daily_task.py                              # 默认每周六 20:30 执行，爬取 30 天
     python setup_daily_task.py --time 08:30                 # 设置每天 08:30 执行
     python setup_daily_task.py --time 14:00 --days 7        # 每天 14:00 执行，爬取 7 天
+    python setup_daily_task.py --weekday saturday           # 每周六 20:30 执行
+    python setup_daily_task.py --python .venv/bin/python    # 指定解释器
     python setup_daily_task.py --test                       # 测试但不安装
     python setup_daily_task.py --remove                     # 删除定时任务
     python setup_daily_task.py --status                     # 查看任务状态
@@ -13,9 +15,34 @@ Law-Push 定时任务设置工具
 import argparse
 import os
 import platform
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+
+REQUIRED_MODULES = ("psycopg", "requests", "bs4")
+DEFAULT_TIME = "20:30"
+WEEKDAYS = {
+    "sunday": 0, "monday": 1, "tuesday": 2, "wednesday": 3,
+    "thursday": 4, "friday": 5, "saturday": 6,
+}
+WEEKDAY_LABELS = {
+    "sunday": "日", "monday": "一", "tuesday": "二", "wednesday": "三",
+    "thursday": "四", "friday": "五", "saturday": "六",
+}
+
+
+def configure_output():
+    """Avoid crashing on consoles that cannot encode status symbols."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            "⚙️".encode(stream.encoding or "utf-8")
+        except (LookupError, UnicodeEncodeError):
+            try:
+                stream.reconfigure(errors="replace")
+            except (AttributeError, ValueError):
+                pass
 
 
 def get_project_root():
@@ -23,15 +50,121 @@ def get_project_root():
     return Path(__file__).resolve().parent
 
 
-def get_python_executable():
-    """获取当前 Python 解释器的绝对路径"""
-    return sys.executable
+def _absolute(path):
+    """Return an absolute path without resolving executable symlinks."""
+    return Path(os.path.abspath(os.path.expanduser(str(path))))
 
 
-def setup_windows_task(time_str: str, days: int = 30, dry_run: bool = False):
+def get_python_executable(explicit=None, project_root=None):
+    """Choose the active or project virtualenv, otherwise the current Python."""
+    root = Path(project_root or get_project_root())
+    if explicit:
+        found = shutil.which(explicit)
+        candidate = Path(found) if found else Path(explicit).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        if not candidate.is_file() and not Path(explicit).is_absolute():
+            project_candidate = root / candidate.relative_to(Path.cwd())
+            if project_candidate.is_file():
+                candidate = project_candidate
+        return _absolute(candidate)
+
+    virtual_env = os.environ.get("VIRTUAL_ENV")
+    if virtual_env:
+        virtual_root = Path(virtual_env)
+        for relative in ("bin/python", "Scripts/python.exe"):
+            candidate = virtual_root / relative
+            if candidate.is_file():
+                return _absolute(candidate)
+
+    for relative in (
+        ".venv/bin/python",
+        ".venv/Scripts/python.exe",
+        "venv/bin/python",
+        "venv/Scripts/python.exe",
+        "env/bin/python",
+        "env/Scripts/python.exe",
+    ):
+        candidate = root / relative
+        if candidate.is_file():
+            return _absolute(candidate)
+    return _absolute(sys.executable)
+
+
+def validate_python_executable(python_exe, project_root):
+    """Check that the interpreter can load the dependencies used by the job."""
+    python_exe = Path(python_exe)
+    if not python_exe.is_file():
+        print(f"❌ 找不到 Python 解释器: {python_exe}")
+        return False
+
+    check = f'''
+import sys
+if sys.version_info < (3, 10):
+    print("VERSION:{sys.version_info.major}.{sys.version_info.minor}")
+    raise SystemExit(3)
+try:
+    import {', '.join(REQUIRED_MODULES)}
+except ModuleNotFoundError as exc:
+    print("MISSING:" + str(exc.name))
+    raise SystemExit(2)
+except Exception as exc:
+    print("IMPORT:" + type(exc).__name__ + ": " + str(exc))
+    raise SystemExit(4)
+'''
+    requirements = Path(project_root) / "requirements.txt"
+    try:
+        result = subprocess.run(
+            [str(python_exe), "-c", check],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"❌ Python 解释器无法执行: {python_exe} ({exc})")
+        return False
+
+    if result.returncode == 0:
+        return True
+
+    details = (result.stdout.strip() or result.stderr.strip())
+    if details.startswith("MISSING:"):
+        missing = details.split(":", 1)[1]
+        print(f"❌ Python 解释器缺少依赖 {missing}: {python_exe}")
+        print(f"  请先执行: \"{python_exe}\" -m pip install -r \"{requirements}\"")
+    elif details.startswith("VERSION:"):
+        version = details.split(":", 1)[1]
+        print(f"❌ Python {version} 版本过低，需要 3.10 或更高版本: {python_exe}")
+    else:
+        print(f"❌ Python 依赖检查失败: {python_exe}")
+        print(f"  {details or '命令未返回错误详情'}")
+    return False
+
+
+def select_python_executable(project_root, explicit=None):
+    """Resolve and verify the interpreter before writing a scheduled task."""
+    python_exe = get_python_executable(explicit, project_root)
+    if not validate_python_executable(python_exe, project_root):
+        return None
+    print(f"  使用 Python: {python_exe}")
+    return python_exe
+
+
+def format_schedule(weekday: str | None, time_str: str) -> str:
+    """Describe the selected weekly or daily schedule."""
+    if weekday is None:
+        return f"每天 {time_str}"
+    return f"每周{WEEKDAY_LABELS[weekday]} {time_str}"
+
+
+def setup_windows_task(time_str: str, days: int = 30, dry_run: bool = False,
+                       python=None, weekday: str | None = None):
     """设置 Windows 定时任务"""
     project_root = get_project_root()
-    python_exe = get_python_executable()
+    python_exe = select_python_executable(project_root, python)
+    if python_exe is None:
+        return False
     run_script = project_root / "run_filter.py"
     log_dir = project_root / "logs"
     log_file = log_dir / "law_filter_schedule.log"
@@ -40,6 +173,13 @@ def setup_windows_task(time_str: str, days: int = 30, dry_run: bool = False):
     log_dir.mkdir(exist_ok=True)
 
     task_name = "Law-Push-Filtered-Daily"
+    schedule = format_schedule(weekday, time_str)
+    if weekday is None:
+        trigger_command = f"New-ScheduledTaskTrigger -Daily -At '{time_str}'"
+    else:
+        trigger_command = (
+            "New-ScheduledTaskTrigger -Weekly "
+            f"-DaysOfWeek {weekday.capitalize()} -At '{time_str}'")
 
     # 验证时间格式
     try:
@@ -59,7 +199,7 @@ def setup_windows_task(time_str: str, days: int = 30, dry_run: bool = False):
     if dry_run:
         print("\n📋 预览配置（不会实际创建任务）：")
         print(f"  任务名称: {task_name}")
-        print(f"  执行时间: 每天 {time_str}")
+        print(f"  执行时间: {schedule}")
         print(f"  爬取天数: {days} 天")
         print(f"  Python路径: {python_exe}")
         print(f"  工作目录: {project_root}")
@@ -74,7 +214,7 @@ $action = New-ScheduledTaskAction `
     -Execute '{os.environ.get("ComSpec", "cmd.exe")}' `
     -Argument '/d /c "{command_line}"' `
     -WorkingDirectory '{project_root}'
-$trigger = New-ScheduledTaskTrigger -Daily -At '{time_str}'
+$trigger = {trigger_command}
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -ExecutionTimeLimit (New-TimeSpan -Hours 2) `
@@ -90,7 +230,7 @@ Register-ScheduledTask `
     -Trigger $trigger `
     -Settings $settings `
     -Principal $principal `
-    -Description 'Law-Push 每日法律案例爬取任务' `
+    -Description 'Law-Push 每周法律案例爬取任务' `
     -Force | Out-Null
 Write-Host "✓"
 '''
@@ -104,7 +244,7 @@ Write-Host "✓"
         )
         print(f"\n✅ 定时任务创建成功！")
         print(f"  任务名称: {task_name}")
-        print(f"  执行时间: 每天 {time_str}")
+        print(f"  执行时间: {schedule}")
         print(f"  爬取天数: {days} 天")
         print(f"  日志文件: {log_file}")
         print(f"\n💡 管理任务：")
@@ -120,10 +260,13 @@ Write-Host "✓"
         return False
 
 
-def setup_linux_task(time_str: str, days: int = 30, dry_run: bool = False):
+def setup_linux_task(time_str: str, days: int = 30, dry_run: bool = False,
+                     python=None, weekday: str | None = None):
     """设置 Linux/macOS cron 定时任务"""
     project_root = get_project_root()
-    python_exe = get_python_executable()
+    python_exe = select_python_executable(project_root, python)
+    if python_exe is None:
+        return False
     run_script = project_root / "run_filter.py"
     log_dir = project_root / "logs"
     log_file = log_dir / "law_filter_schedule.log"
@@ -146,11 +289,14 @@ def setup_linux_task(time_str: str, days: int = 30, dry_run: bool = False):
         return False
 
     marker = "# Law-Push filtered crawl"
-    cron_line = f'{minute} {hour} * * * cd "{project_root}" && "{python_exe}" -u "{run_script}" {days} >> "{log_file}" 2>&1 {marker}'
+    schedule = format_schedule(weekday, time_str)
+    day_field = "*" if weekday is None else str(WEEKDAYS[weekday])
+    cron_line = (f'{minute} {hour} * * {day_field} cd "{project_root}" && '
+                 f'"{python_exe}" -u "{run_script}" {days} >> "{log_file}" 2>&1 {marker}')
 
     if dry_run:
         print("\n📋 预览配置（不会实际创建任务）：")
-        print(f"  执行时间: 每天 {time_str}")
+        print(f"  执行时间: {schedule}")
         print(f"  爬取天数: {days} 天")
         print(f"  Python路径: {python_exe}")
         print(f"  工作目录: {project_root}")
@@ -195,7 +341,7 @@ def setup_linux_task(time_str: str, days: int = 30, dry_run: bool = False):
 
         if proc.returncode == 0:
             print(f"\n✅ Cron 定时任务创建成功！")
-            print(f"  执行时间: 每天 {time_str}")
+            print(f"  执行时间: {schedule}")
             print(f"  爬取天数: {days} 天")
             print(f"  日志文件: {log_file}")
             print(f"\n💡 管理任务：")
@@ -347,14 +493,17 @@ def check_linux_status():
 
 
 def main():
+    configure_output()
     parser = argparse.ArgumentParser(
         description="Law-Push 定时任务设置工具",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python setup_daily_task.py                        默认每天 08:00 执行，爬取 30 天
+  python setup_daily_task.py                        默认每周六 20:30 执行，爬取 30 天
   python setup_daily_task.py --time 08:30           每天 08:30 执行，爬取 30 天
   python setup_daily_task.py --time 14:00 --days 7  每天 14:00 执行，爬取 7 天
+  python setup_daily_task.py --weekday saturday --time 20:30  每周六 20:30 执行
+  python setup_daily_task.py --python .venv/bin/python  指定任务使用的解释器
   python setup_daily_task.py --test                 测试但不安装
   python setup_daily_task.py --status               查看任务状态
   python setup_daily_task.py --remove               删除定时任务
@@ -363,14 +512,24 @@ def main():
 
     parser.add_argument(
         "--time",
-        default="08:00",
-        help="每天执行的时间，格式 HH:MM（默认 08:00）"
+        default=DEFAULT_TIME,
+        help=f"执行时间，格式 HH:MM（默认 {DEFAULT_TIME}）"
     )
     parser.add_argument(
         "--days",
         type=int,
         default=30,
         help="爬取最近多少天的数据（默认 30 天）"
+    )
+    parser.add_argument(
+        "--weekday",
+        choices=[*WEEKDAYS, "all"],
+        help="每周几执行（默认 saturday）；传入 all 则每天执行"
+    )
+    parser.add_argument(
+        "--python",
+        dest="python",
+        help="定时任务使用的 Python 解释器（默认优先使用项目 .venv）"
     )
     parser.add_argument(
         "--test",
@@ -412,11 +571,18 @@ def main():
 
     # 创建任务
     print(f"\n⚙️  设置定时任务 ({system})...\n")
+    weekday = args.weekday or "saturday"
+    if weekday == "all":
+        weekday = None
 
     if system == "Windows":
-        success = setup_windows_task(args.time, args.days, dry_run=args.test)
+        success = setup_windows_task(
+            args.time, args.days, dry_run=args.test, python=args.python,
+            weekday=weekday)
     elif system in ["Linux", "Darwin"]:
-        success = setup_linux_task(args.time, args.days, dry_run=args.test)
+        success = setup_linux_task(
+            args.time, args.days, dry_run=args.test, python=args.python,
+            weekday=weekday)
     else:
         print(f"❌ 不支持的操作系统: {system}")
         return 1

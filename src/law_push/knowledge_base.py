@@ -1,4 +1,4 @@
-"""Synchronize PostgreSQL cases marked 是否同步到知识库=是 to Dify."""
+"""Synchronize PostgreSQL cases marked 是否同步到知识库=否 to Dify."""
 
 from __future__ import annotations
 
@@ -20,6 +20,8 @@ from .paths import CONFIG_DIR
 
 CFG = CONFIG_DIR / "kb_sync.local.json"
 FIELDS = "fid, fk_r8p0_title, fk_r8p0_source, fk_r8p0_link, fk_r8p0_date, fk_r8p0_file_date, fk_r8p0_summary"
+UNSYNCED = "否"
+SYNCED = "是"
 logger = logging.getLogger(__name__)
 
 
@@ -114,10 +116,11 @@ def disable_old_documents(session: requests.Session, dify: dict[str, Any], datas
 
 def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
                 limit: int | None = None, disable_old: bool = True) -> dict[str, int]:
-    """Submit pending cases in batches and acknowledge each accepted document.
+    """Submit unsynchronized cases in batches and mark each accepted document.
 
     Dify indexes accepted documents asynchronously. Accepted submissions are
-    recorded as 否; rejected submissions stay 是 for the next invocation.
+    recorded as 是; rejected submissions stay 否 for the next invocation.
+    Rows without a status (NULL or empty) are treated as not yet synchronized.
 
     If disable_old is True, disables all existing documents in the target dataset
     before syncing new ones.
@@ -136,8 +139,9 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
                          row_factory=dict_row, autocommit=True) as db:
         # Bound this run to existing records; later inserts are picked up next time.
         pending = db.execute(sql.SQL(
-            "SELECT COUNT(*) AS count, MAX(fid) AS max_id FROM {} WHERE fk_r8p0_sync_kb=%s"
-        ).format(table), ("是",)).fetchone()
+            "SELECT COUNT(*) AS count, MAX(fid) AS max_id FROM {} "
+            "WHERE COALESCE(fk_r8p0_sync_kb, '') <> %s"
+        ).format(table), (UNSYNCED,)).fetchone()
         outcome["pending"] = pending["count"]
         if dry_run or not outcome["pending"]:
             logger.info("待同步 %d 条", outcome["pending"])
@@ -161,9 +165,10 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
             while limit is None or attempted < limit:
                 batch_size = min(100, limit - attempted) if limit else 100
                 condition = sql.SQL("") if last_id is None else sql.SQL(" AND fid > %s")
-                params = ("是", pending["max_id"]) + (() if last_id is None else (last_id,)) + (batch_size,)
+                params = (UNSYNCED,) + (pending["max_id"],) + (() if last_id is None else (last_id,)) + (batch_size,)
                 rows = db.execute(sql.SQL(
-                    "SELECT fid FROM {} WHERE fk_r8p0_sync_kb=%s AND fid <= %s{} ORDER BY fid LIMIT %s"
+                    "SELECT fid FROM {} WHERE COALESCE(fk_r8p0_sync_kb, '') <> %s "
+                    "AND fid <= %s{} ORDER BY fid LIMIT %s"
                 ).format(table, condition), params).fetchall()
                 if not rows:
                     break
@@ -175,9 +180,10 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
                         # Concurrent runs cannot submit the same row simultaneously.
                         with db.transaction():
                             row = db.execute(sql.SQL(
-                                "SELECT " + FIELDS + " FROM {} WHERE fid=%s AND fk_r8p0_sync_kb=%s "
+                                "SELECT " + FIELDS + " FROM {} WHERE fid=%s "
+                                "AND COALESCE(fk_r8p0_sync_kb, '') <> %s "
                                 "FOR UPDATE SKIP LOCKED"
-                            ).format(table), (fid, "是")).fetchone()
+                            ).format(table), (fid, SYNCED)).fetchone()
                             if row is None:
                                 outcome["skipped"] += 1
                                 continue
@@ -193,7 +199,7 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
                                 raise ValueError("Dify 未返回有效 document.id")
                             db.execute(sql.SQL(
                                 "UPDATE {} SET fk_r8p0_sync_kb=%s WHERE fid=%s"
-                            ).format(table), ("否", fid))
+                            ).format(table), (SYNCED, fid))
                         outcome["synced"] += 1
                         logger.info("fid=%s 已提交知识库，Dify 将异步建立索引", fid)
                     except (requests.RequestException, ValueError, psycopg.Error) as exc:
@@ -204,6 +210,36 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
     return outcome
 
 
+def count_unsynchronized(config_path: str | Path | None = None) -> int:
+    """Count rows whose knowledge-base status is not 是."""
+    config = load(config_path)["database"]
+    table = sql.Identifier(config["schema"], config["table"])
+    with psycopg.connect(host=config["host"], port=config["port"],
+                         dbname=config["database"], user=config["user"],
+                         password=config.get("password", ""), connect_timeout=5) as db:
+        return db.execute(sql.SQL(
+            "SELECT COUNT(*) FROM {} WHERE COALESCE(fk_r8p0_sync_kb, '') <> %s"
+        ).format(table), (SYNCED,)).fetchone()[0]
+
+
+def mark_all_synced(config_path: str | Path | None = None) -> int:
+    """Mark every row as synchronized without contacting Dify.
+
+    This is intended for one-time migration of deployments created before the
+    status semantics were corrected, so previously submitted cases are not sent
+    again.
+    """
+    config = load(config_path)["database"]
+    table = sql.Identifier(config["schema"], config["table"])
+    with psycopg.connect(host=config["host"], port=config["port"],
+                         dbname=config["database"], user=config["user"],
+                         password=config.get("password", ""), connect_timeout=5) as db:
+        cursor = db.execute(sql.SQL(
+            "UPDATE {} SET fk_r8p0_sync_kb=%s WHERE COALESCE(fk_r8p0_sync_kb, '') <> %s"
+        ).format(table), (SYNCED, SYNCED))
+        return cursor.rowcount
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="将数据库待同步案例提交到 Dify 知识库")
     parser.add_argument("--dry-run", action="store_true", help="只查询待同步数量")
@@ -211,9 +247,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--database-config", help="包含 database 和 dify 的 JSON 配置路径")
     parser.add_argument("--no-disable-old", action="store_true",
                         help="同步前不禁用知识库中的旧文档")
+    parser.add_argument("--mark-synced", action="store_true",
+                        help="仅把全部案例标记为已同步（用于迁移旧状态）")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     try:
+        if args.mark_synced:
+            if args.dry_run:
+                count = count_unsynchronized(args.database_config)
+                logger.info("待标记 %d 条", count)
+            else:
+                count = mark_all_synced(args.database_config)
+                logger.info("已标记 %d 条为已同步", count)
+            return 0
         outcome = synchronize(args.database_config, dry_run=args.dry_run, limit=args.limit,
                             disable_old=not args.no_disable_old)
     except Exception as exc:

@@ -4,6 +4,9 @@ set -eu
 # Install an idempotent cron entry for the filtered legal crawl.
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 PYTHON_BIN="${PYTHON_EXECUTABLE:-}"
+if [ -z "$PYTHON_BIN" ] && [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+    PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python"
+fi
 if [ -z "$PYTHON_BIN" ]; then
     PYTHON_BIN="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
 fi

@@ -41,7 +41,7 @@ def load_config(path=None):
     return config
 
 
-def build_case_payload(items, file_date=None, sync_kb="是"):
+def build_case_payload(items, file_date=None, sync_kb="否"):
     """Map records to the seven fields accepted by the case API."""
     rows = []
     for item in items:
@@ -166,7 +166,7 @@ class KingdeeCaseClient:
 
     def send_cases(self, items, file_date=None, sync_kb=None):
         payload = build_case_payload(items, file_date,
-                                     self.config.get("sync_kb", "是") if sync_kb is None else sync_kb)
+                                     self.config.get("sync_kb", "否") if sync_kb is None else sync_kb)
         if not payload["data"]:
             return 0
         required = ("client_id", "client_secret", "username", "account_id")

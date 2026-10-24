@@ -7,6 +7,9 @@ from unittest.mock import Mock
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import setup_daily_task
+
 from law_push import cli
 from law_push.crawler import LawCrawler
 
@@ -79,3 +82,36 @@ def test_export_creates_output_directories(tmp_path):
         assert (output / 'case.csv').read_text(encoding='utf-8-sig').startswith('标题,来源,日期,链接,文件日期')
     finally:
         crawler.session.close()
+
+
+def test_scheduler_defaults_to_saturday_evening_and_active_venv(tmp_path, monkeypatch):
+    project = tmp_path / 'project'
+    venv_bin = project / '.venv/bin'
+    venv_bin.mkdir(parents=True)
+    python = venv_bin / 'python'
+    python.write_text('#!/bin/sh\n', encoding='utf-8')
+    python.chmod(0o755)
+    monkeypatch.delenv('VIRTUAL_ENV', raising=False)
+    assert setup_daily_task.get_python_executable(None, project) == python
+    assert setup_daily_task.format_schedule('saturday', '20:30') == '每周六 20:30'
+    (project / 'run_filter.py').write_text('', encoding='utf-8')
+    monkeypatch.setattr(setup_daily_task.platform, 'system', Mock(return_value='Linux'))
+    monkeypatch.setattr(setup_daily_task, 'validate_python_executable', Mock(return_value=True))
+    crontab = Mock(returncode=0, stdout='', stderr='')
+    monkeypatch.setattr(setup_daily_task.subprocess, 'run', Mock(return_value=crontab))
+    monkeypatch.setattr(setup_daily_task, 'get_project_root', Mock(return_value=project))
+    monkeypatch.setattr(setup_daily_task, 'get_python_executable', Mock(return_value=python))
+    monkeypatch.setattr(sys, 'argv', ['setup_daily_task.py'])
+    assert setup_daily_task.main() == 0
+    installed = setup_daily_task.subprocess.run.call_args_list[-1].kwargs['input']
+    assert '30 20 * * 6' in installed
+    assert str(python) in installed
+
+
+def test_scheduler_uses_active_virtualenv(tmp_path, monkeypatch):
+    venv = tmp_path / 'active'
+    python = venv / 'bin/python'
+    python.parent.mkdir(parents=True)
+    python.write_text('', encoding='utf-8')
+    monkeypatch.setenv('VIRTUAL_ENV', str(venv))
+    assert setup_daily_task.get_python_executable(None, tmp_path) == python
