@@ -125,8 +125,8 @@ def import_csv(path: str | Path, config_path: str | Path | None = None) -> dict[
                 sql.SQL(
                     """INSERT INTO {} (fid, fk_r8p0_title, fk_r8p0_source,
                     fk_r8p0_link, fk_r8p0_date, fk_r8p0_file_date,
-                    fk_r8p0_summary, fk_r8p0_sync_kb)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, '否')"""
+                    fk_r8p0_summary, fk_r8p0_sync_kb, fk_r8p0_wechat_push)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, '是', '否')"""
                 ).format(table),
                 (next_id, record["title"], record["source"], record["link"],
                  record["date"], record["file_date"], record["summary"]),

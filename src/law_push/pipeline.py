@@ -159,8 +159,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="import case.csv into the database without knowledge base sync")
     parser.add_argument("--kingdee-config", help="Kingdee JSON config file")
     parser.add_argument("--kingdee-timeout", type=int, default=60)
-    parser.add_argument("--sync-kb", help="legacy Kingdee HTTP push field r8p0_sync_kb")
-    parser.add_argument("--wecom-push", choices=["是", "否"], default="否",
+    parser.add_argument("--sync-kb", choices=["是", "否"],
+                        help="旧金蝶推送字段 r8p0_sync_kb（默认是）")
+    parser.add_argument("--wecom-push", choices=["是", "否"],
                         help="旧金蝶推送字段 r8p0_wecom_push（默认否）")
     parser.add_argument("--database-config", help="database JSON config (default: config/kb_sync.local.json)")
     args = parser.parse_args(argv)

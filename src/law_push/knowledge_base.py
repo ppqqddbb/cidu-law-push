@@ -118,9 +118,10 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
                 limit: int | None = None, disable_old: bool = True) -> dict[str, int]:
     """Submit unsynchronized cases in batches and mark each accepted document.
 
-    Dify indexes accepted documents asynchronously. Accepted submissions are
-    recorded as 是; rejected submissions stay 否 for the next invocation.
-    Rows without a status (NULL or empty) are treated as not yet synchronized.
+    New rows start as 是 in the database. Rows marked 否 are queued for this
+    synchronizer; accepted submissions are recorded as 是, while rejected
+    submissions remain 否 for the next invocation. NULL or empty statuses are
+    never selected, so a new row's default 是 is not submitted by accident.
 
     If disable_old is True, disables all existing documents in the target dataset
     before syncing new ones.
@@ -140,7 +141,7 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
         # Bound this run to existing records; later inserts are picked up next time.
         pending = db.execute(sql.SQL(
             "SELECT COUNT(*) AS count, MAX(fid) AS max_id FROM {} "
-            "WHERE COALESCE(fk_r8p0_sync_kb, '') <> %s"
+            "WHERE COALESCE(fk_r8p0_sync_kb, '') = %s"
         ).format(table), (UNSYNCED,)).fetchone()
         outcome["pending"] = pending["count"]
         if dry_run or not outcome["pending"]:
@@ -167,7 +168,7 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
                 condition = sql.SQL("") if last_id is None else sql.SQL(" AND fid > %s")
                 params = (UNSYNCED,) + (pending["max_id"],) + (() if last_id is None else (last_id,)) + (batch_size,)
                 rows = db.execute(sql.SQL(
-                    "SELECT fid FROM {} WHERE COALESCE(fk_r8p0_sync_kb, '') <> %s "
+                    "SELECT fid FROM {} WHERE COALESCE(fk_r8p0_sync_kb, '') = %s "
                     "AND fid <= %s{} ORDER BY fid LIMIT %s"
                 ).format(table, condition), params).fetchall()
                 if not rows:
@@ -181,9 +182,9 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
                         with db.transaction():
                             row = db.execute(sql.SQL(
                                 "SELECT " + FIELDS + " FROM {} WHERE fid=%s "
-                                "AND COALESCE(fk_r8p0_sync_kb, '') <> %s "
+                                "AND COALESCE(fk_r8p0_sync_kb, '') = %s "
                                 "FOR UPDATE SKIP LOCKED"
-                            ).format(table), (fid, SYNCED)).fetchone()
+                            ).format(table), (fid, UNSYNCED)).fetchone()
                             if row is None:
                                 outcome["skipped"] += 1
                                 continue
@@ -211,15 +212,15 @@ def synchronize(config_path: str | Path | None = None, *, dry_run: bool = False,
 
 
 def count_unsynchronized(config_path: str | Path | None = None) -> int:
-    """Count rows whose knowledge-base status is not 是."""
+    """Count rows queued for knowledge-base synchronization."""
     config = load(config_path)["database"]
     table = sql.Identifier(config["schema"], config["table"])
     with psycopg.connect(host=config["host"], port=config["port"],
                          dbname=config["database"], user=config["user"],
                          password=config.get("password", ""), connect_timeout=5) as db:
         return db.execute(sql.SQL(
-            "SELECT COUNT(*) FROM {} WHERE COALESCE(fk_r8p0_sync_kb, '') <> %s"
-        ).format(table), (SYNCED,)).fetchone()[0]
+            "SELECT COUNT(*) FROM {} WHERE COALESCE(fk_r8p0_sync_kb, '') = %s"
+        ).format(table), (UNSYNCED,)).fetchone()[0]
 
 
 def mark_all_synced(config_path: str | Path | None = None) -> int:

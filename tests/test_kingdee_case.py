@@ -48,7 +48,7 @@ class KingdeeCaseTests(unittest.TestCase):
         self.assertEqual(case_call.kwargs["json"], {"data": [{
             "r8p0_title": "案例一", "r8p0_source": "法院", "r8p0_link": "https://example.com/case",
             "r8p0_date": "2026-08-01", "r8p0_file_date": "2026-09-09 00:00:00",
-            "r8p0_sync_kb": "否", "r8p0_wecom_push": "否", "r8p0_summary": "案例摘要",
+            "r8p0_sync_kb": "是", "r8p0_wecom_push": "否", "r8p0_summary": "案例摘要",
         }]})
         self.assertEqual(case_call.kwargs["timeout"], 60)
         self.assertFalse(case_call.kwargs["allow_redirects"])
@@ -188,6 +188,30 @@ class KingdeeCaseTests(unittest.TestCase):
         self.assertEqual(payload["r8p0_summary"], "")
         with self.assertRaises(ValueError):
             build_case_payload([record], "2026-02-30")
+
+    def test_push_flags_default_and_reject_invalid(self):
+        payload = build_case_payload([self.item])["data"][0]
+        self.assertEqual(payload["r8p0_sync_kb"], "是")
+        self.assertEqual(payload["r8p0_wecom_push"], "否")
+        for field in ("sync_kb", "wecom_push"):
+            for bad in ("", " ", "true", "1", "YES"):
+                with self.subTest(field=field, value=bad), self.assertRaises(ValueError):
+                    build_case_payload([self.item], **{field: bad})
+
+    def test_config_push_flags_default_and_reject_invalid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "kingdee.json"
+            path.write_text(json.dumps(self.config), encoding="utf-8")
+            config = load_config(path)
+            self.assertEqual(config["sync_kb"], "是")
+            self.assertEqual(config["wecom_push"], "否")
+
+            for field in ("sync_kb", "wecom_push"):
+                for bad in ("", " ", "true", "1", "YES"):
+                    invalid = dict(self.config, **{field: bad})
+                    path.write_text(json.dumps(invalid), encoding="utf-8")
+                    with self.subTest(field=field, value=bad), self.assertRaises(ValueError):
+                        load_config(path)
 
     def test_generated_txt_and_csv_can_be_sent(self):
         crawler = LawCrawler(days=30)

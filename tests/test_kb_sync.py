@@ -20,10 +20,12 @@ class CaseDatabase:
         query = statement.as_string()
         cursor = Mock()
         if 'COUNT(*)' in query:
+            assert params[0] == '否'
+            assert "<> %s" not in query
             cursor.fetchone.return_value = {'count': len(self.pending), 'max_id': max(self.pending, default=None)}
         elif 'FOR UPDATE' in query:
             fid = params[0]
-            assert params[1] == '是'
+            assert params[1] == '否'
             cursor.fetchone.return_value = dict(fid=fid, fk_r8p0_title='案例', fk_r8p0_summary='第一行\n第二行')
         elif query.startswith('SELECT fid FROM'):
             assert params[0] == '否'

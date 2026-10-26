@@ -18,10 +18,22 @@ from .paths import CONFIG_DIR
 DEFAULT_CONFIG = CONFIG_DIR / "kingdee.local.json"
 DEFAULT_CASE_URL = "http://127.0.0.1:8881/ierp/kapi/v2/r8p0/r8p0_law/r8p0_case/case"
 DEFAULT_TOKEN_URL = "http://127.0.0.1:8881/ierp/kapi/oauth2/getToken"
+SYNC_KB_DEFAULT = "是"
+WECOM_PUSH_DEFAULT = "否"
+FLAG_VALUES = frozenset({"是", "否"})
 
 
 class KingdeeError(RuntimeError):
     """Authentication, transport or business-level API failure."""
+
+
+def normalize_flag(value, field, default):
+    """Return one of 是/否; omitted values use the documented default."""
+    if value is None:
+        return default
+    if not isinstance(value, str) or value.strip() not in FLAG_VALUES:
+        raise ValueError(f"{field} 只能是“是”或“否”，当前值: {value!r}")
+    return value.strip()
 
 
 def load_config(path=None):
@@ -38,11 +50,17 @@ def load_config(path=None):
             config[key] = value
     config.setdefault("token_url", DEFAULT_TOKEN_URL)
     config.setdefault("case_url", DEFAULT_CASE_URL)
+    for key, default in (("sync_kb", SYNC_KB_DEFAULT),
+                         ("wecom_push", WECOM_PUSH_DEFAULT)):
+        config[key] = normalize_flag(config.get(key), key, default)
     return config
 
 
-def build_case_payload(items, file_date=None, sync_kb="否", wecom_push="否"):
+def build_case_payload(items, file_date=None, sync_kb=SYNC_KB_DEFAULT,
+                       wecom_push=WECOM_PUSH_DEFAULT):
     """Map records to the fields accepted by the case API."""
+    sync_kb = normalize_flag(sync_kb, "r8p0_sync_kb", SYNC_KB_DEFAULT)
+    wecom_push = normalize_flag(wecom_push, "r8p0_wecom_push", WECOM_PUSH_DEFAULT)
     rows = []
     for item in items:
         published = str(item.get("date") or "").strip()
@@ -168,8 +186,10 @@ class KingdeeCaseClient:
     def send_cases(self, items, file_date=None, sync_kb=None, wecom_push=None):
         payload = build_case_payload(
             items, file_date,
-            self.config.get("sync_kb", "否") if sync_kb is None else sync_kb,
-            self.config.get("wecom_push", "否") if wecom_push is None else wecom_push)
+            normalize_flag(self.config.get("sync_kb"), "sync_kb", SYNC_KB_DEFAULT)
+            if sync_kb is None else sync_kb,
+            normalize_flag(self.config.get("wecom_push"), "wecom_push", WECOM_PUSH_DEFAULT)
+            if wecom_push is None else wecom_push)
         if not payload["data"]:
             return 0
         required = ("client_id", "client_secret", "username", "account_id")

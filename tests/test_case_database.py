@@ -53,7 +53,9 @@ def test_repeated_csv_import_skips_existing_rows(tmp_path, monkeypatch):
         host='localhost', port=5432, database='test', user='test', schema='public', table='cases')))
     assert case_database.import_csv(path) == {'inserted': 1, 'skipped': 1}
     assert case_database.import_csv(path) == {'inserted': 0, 'skipped': 2}
-    assert "'否'" in inserts[0]
+    assert "fk_r8p0_sync_kb" in inserts[0]
+    assert "fk_r8p0_wechat_push" in inserts[0]
+    assert "VALUES (%s, %s, %s, %s, %s, %s, %s, '是', '否')" in inserts[0]
 
 
 def test_csv_import_cli_reports_failure(monkeypatch):

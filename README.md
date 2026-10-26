@@ -22,6 +22,14 @@ python .\run_filter.py 30
 # 启动命令
 python setup_daily_task.py
 python setup_daily_task.py --time xx:xx
+python setup_daily_task.py                              # 默认每周六 20:30 执行，爬取 30 天
+python setup_daily_task.py --time 08:30                 # 设置每天 08:30 执行
+python setup_daily_task.py --time 14:00 --days 7        # 每天 14:00 执行，爬取 7 天
+python setup_daily_task.py --weekday saturday           # 每周六 20:30 执行
+python setup_daily_task.py --python .venv/bin/python    # 指定解释器
+python setup_daily_task.py --test                       # 测试但不安装
+python setup_daily_task.py --remove                     # 删除定时任务
+python setup_daily_task.py --status                     # 查看任务状态
 ```
 
 现有本机配置已迁移到 `config/`，原有输出已迁移到 `data/output/`。
@@ -73,12 +81,16 @@ Law-Push/
 | 补同步知识库（保留旧文档） | `python .\run_filter.py sync-kb --no-disable-old` |
 | 查询待同步数量，不写入 | `python .\run_filter.py sync-kb --dry-run` |
 | 旧金蝶 HTTP 推送 | `python .\run_filter.py push-kingdee .\data\output\case.csv` |
+| 旧金蝶推送并关闭同步知识库 | `python .\run_filter.py push-kingdee .\data\output\case.csv --sync-kb 否` |
 | 旧金蝶推送并启用企微推送 | `python .\run_filter.py push-kingdee .\data\output\case.csv --wecom-push 是` |
 | 配置检查 | `python .\run_filter.py check-config` |
 | 验证知识库配置 | `python scripts\verify_kb_config.py` |
 | 查看某个命令的参数 | `python .\run_filter.py crawl --help` |
 
 正常使用完整流程即可，无需另外执行入库和同步命令。补导入仅负责入库，之后可以单独执行 `sync-kb`。
+
+旧金蝶推送的 `--sync-kb`（同步知识库）默认 `是`，`--wecom-push`（企微推送）默认 `否`；
+两者只接受 `是` 或 `否`，空值和其他取值会被拒绝。
 
 ## 安装为标准 Python 命令
 
@@ -106,7 +118,8 @@ Dify 接收文档后异步建立索引；提交成功不代表索引已完成。
 
 ## 知识库同步
 
-知识库同步功能会将数据库中标记为"是否同步到知识库=否"的案例提交到 Dify 知识库。
+数据库入库时 k_r8p0_sync_kb 默认写 "是"、k_r8p0_wechat_push 默认写 "否"。
+知识库同步功能会将数据库中明确标记为"是否同步到知识库=否"的案例提交到 Dify 知识库。
 
 ### 同步行为
 

@@ -48,8 +48,10 @@ def main(argv=None):
     parser.add_argument("--config", help="Kingdee JSON config file")
     parser.add_argument("--file-date", type=format_file_date, metavar="YYYY-MM-DD HH:MM:SS",
                         help="override file date; required for older four-field files")
-    parser.add_argument("--sync-kb", help="value for r8p0_sync_kb")
-    parser.add_argument("--wecom-push", help="value for r8p0_wecom_push (default: 否)")
+    parser.add_argument("--sync-kb", choices=["是", "否"],
+                        help="value for r8p0_sync_kb (default: 是)")
+    parser.add_argument("--wecom-push", choices=["是", "否"],
+                        help="value for r8p0_wecom_push (default: 否)")
     parser.add_argument("--timeout", type=int, default=60)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
